@@ -1,0 +1,2546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Support Hub</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+.table-fixed-layout { table-layout: fixed; width: 100%; }
+.preserve-lines { white-space: pre-wrap; word-break: break-word; }
+.sup-row { transition: background-color .15s ease; }
+.sup-row:hover { background-color: #f8fafc; }
+.rich-editor-content { min-height: 90px; outline: none; }
+.rich-editor-content img { max-width: 100%; max-height: 250px; border-radius: 8px; margin: 6px 0; display: inline-block; border: 1px solid #e2e8f0; }
+</style>
+</head>
+<body class="bg-slate-50/80 font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+
+<!-- LOGIN SCREEN OVERLAY -->
+<div id="login-overlay" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-slate-200">
+<div class="text-center mb-6">
+<div class="inline-flex items-center justify-center w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl mb-4 shadow-inner">
+<svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+</div>
+<h2 class="text-2xl font-black text-slate-900 tracking-tight">Support Hub</h2>
+<p class="text-xs text-slate-500 mt-1">Select your profile to enter the workspace</p>
+</div>
+
+<form onsubmit="executeLogin(event)" class="space-y-4">
+<div>
+<label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Select User Account</label>
+<select id="login-user-select" required onchange="toggleLoginPasswordField()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition">
+<option value="">Loading roster members...</option>
+</select>
+</div>
+<div id="login-password-row" class="hidden">
+<label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Admin Password</label>
+<input type="password" id="login-password-input" placeholder="Enter your Admin password" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition">
+<p id="login-error-msg" class="text-xs text-red-600 font-semibold mt-1 hidden"></p>
+</div>
+<button type="submit" id="login-submit-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-emerald-600/30 transition">
+Sign In to Portal &rarr;
+</button>
+</form>
+</div>
+</div>
+
+<!-- MAIN APP CONTAINER -->
+<div id="app-container" class="hidden min-h-screen flex flex-col">
+<header class="bg-slate-900 text-white shadow-lg sticky top-0 z-40">
+<div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+<div class="flex items-center space-x-3">
+<div class="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center font-black text-slate-950 text-lg shadow">H</div>
+<div>
+<h1 class="text-base font-bold tracking-tight">Support Hub</h1>
+<p id="current-date" class="text-[10px] text-slate-400"></p>
+</div>
+</div>
+<div class="flex items-center space-x-3 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+<div class="text-right">
+<p id="header-user-name" class="font-bold text-white text-xs">User Name</p>
+</div>
+<div>
+<span id="user-role-tag" class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-400 text-slate-950">Coordinator</span>
+</div>
+<button onclick="logoutToLogin()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-md text-slate-300 font-semibold transition ml-2">Logout</button>
+</div>
+</div>
+<div class="max-w-7xl mx-auto px-4 flex space-x-8 text-xs font-semibold border-t border-slate-800 overflow-x-auto">
+<button onclick="switchTab('coordinator')" id="tab-coordinator" class="py-3 text-emerald-400 border-b-2 border-emerald-400 whitespace-nowrap">Coordinator Workspace</button>
+<button onclick="switchTab('answered')" id="tab-answered" class="py-3 text-slate-400 hover:text-white flex items-center gap-1.5 whitespace-nowrap">
+<span>Answered Tickets</span>
+<span id="unread-ticker" class="hidden bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span>
+</button>
+<button onclick="switchTab('all-tickets')" id="tab-all-tickets" class="py-3 text-slate-400 hover:text-white whitespace-nowrap">All Questions / Tickets</button>
+<button onclick="switchTab('supervisor')" id="tab-supervisor" class="py-3 text-slate-400 hover:text-white hidden items-center gap-1.5 whitespace-nowrap">Supervisor Desk <span id="pending-ticker" class="hidden bg-amber-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span></button>
+<button onclick="switchTab('reporting')" id="tab-reporting" class="py-3 text-slate-400 hover:text-white hidden whitespace-nowrap">Reporting Analytics</button>
+<button onclick="switchTab('team')" id="tab-team" class="py-3 text-slate-400 hover:text-white hidden whitespace-nowrap">Team Setup</button>
+</div>
+</header>
+
+<div id="toast-container" class="fixed top-5 right-5 z-50 space-y-2"></div>
+
+<main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
+
+<!-- TAB 1: COORDINATOR WORKSPACE -->
+<section id="view-coordinator" class="space-y-6">
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<h2 class="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+<span class="w-2 h-2 bg-emerald-500 rounded-full"></span> Submit Question
+</h2>
+<form id="question-form" onsubmit="handleQuestionSubmit(event)" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="md:col-span-2 relative">
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Question Details * (Type @ to assign to a person, paste links/images)</label>
+
+<!-- Rich Text Toolbar -->
+<div class="border border-slate-300 rounded-t-xl bg-slate-50 p-1.5 flex items-center gap-1 border-b-0 text-xs text-slate-600">
+  <button type="button" onclick="execEditorCmd('bold')" class="px-2 py-0.5 rounded hover:bg-slate-200 font-bold" title="Bold">B</button>
+  <button type="button" onclick="execEditorCmd('italic')" class="px-2 py-0.5 rounded hover:bg-slate-200 italic" title="Italic">I</button>
+  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline" title="Insert Link">🔗 Link</button>
+  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer" title="Attach Image">
+    📷 Image <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
+  </label>
+</div>
+
+<!-- ContentEditable Rich Editor Box -->
+<div id="editor-inp-question" contenteditable="true" onkeyup="handleMentionSearch(event)" onclick="handleMentionSearch(event)" class="rich-editor-content w-full border border-slate-300 p-3 rounded-b-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition bg-white leading-relaxed"></div>
+<input type="hidden" id="inp-assigned-email">
+
+<!-- Mention Suggestions Popup -->
+<div id="mention-dropdown" class="hidden absolute z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto w-64 text-xs divide-y divide-slate-100"></div>
+</div>
+
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Event / Wedding Name *</label>
+<input type="text" id="inp-event" required class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="e.g. Smith Wedding (or NA)">
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Case / Event URL *</label>
+<input type="url" id="inp-link" required class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="https://salesforce.com/...">
+</div>
+<div class="md:col-span-2 flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+<label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" id="inp-urgent" class="w-4 h-4 text-red-600 rounded border-slate-300 focus:ring-red-500 accent-red-600">
+<span class="text-xs font-bold text-red-600 flex items-center gap-1">
+<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+Mark as Urgent Escalation (Forces Top Priority P1)
+</span>
+</label>
+<button type="submit" id="question-submit-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-md transition disabled:opacity-50">Submit Question</button>
+</div>
+</form>
+</div>
+
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+<div>
+<h2 class="text-base font-bold text-slate-800">My Active Submitted Questions</h2>
+<p class="text-xs text-slate-500">Tracking open tickets submitted by <span id="log-filter-user" class="font-semibold text-slate-700"></span></p>
+</div>
+<div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+<input type="text" id="coord-search" oninput="renderCoordinatorQuestions()" placeholder="Search active..." class="border border-slate-300 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500">
+<select id="coord-prio-filter" onchange="renderCoordinatorQuestions()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="ALL">All Priorities</option>
+<option value="P1">P1 Urgent</option>
+<option value="P2">P2 High</option>
+<option value="P3">P3 Medium</option>
+<option value="P4">P4 Normal</option>
+</select>
+<input type="date" id="coord-date-filter" onchange="renderCoordinatorQuestions()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+</div>
+</div>
+
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-16 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','priority')">PRIO<span id="sort-arrow-coord-priority"></span></th>
+<th class="p-3 w-28 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','created')">SUBMITTED<span id="sort-arrow-coord-created"></span></th>
+<th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','eventName')">EVENT<span id="sort-arrow-coord-eventName"></span></th>
+<th class="p-3">QUESTION</th>
+<th class="p-3 w-28 text-center cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','status')">STATUS<span id="sort-arrow-coord-status"></span></th>
+<th class="p-3 w-28 text-right">ACTION</th>
+</tr>
+</thead>
+<tbody id="coord-table-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<!-- TAB 2: ANSWERED TICKETS -->
+<section id="view-answered" class="hidden space-y-6">
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+<div>
+<h2 class="text-base font-bold text-slate-800">Answered Tickets Desk</h2>
+<p class="text-xs text-slate-500">Review supervisor answers and resolution turnaround times</p>
+</div>
+<div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+<select id="answered-scope-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-semibold">
+<option value="ALL">All Answered Tickets</option>
+<option value="MINE">My Questions Only</option>
+<option value="INTERNAL" id="answered-scope-internal-opt" class="hidden">Internal Support Questions Only</option>
+</select>
+<input type="text" id="answered-search" oninput="renderAnsweredTab()" placeholder="Search answers..." class="border border-slate-300 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500">
+<select id="answered-askedby-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="">Asked by: anyone</option>
+</select>
+<select id="answered-by-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="">Answered by: anyone</option>
+</select>
+<select id="answered-read-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="ALL">All Read States</option>
+<option value="UNREAD">Unread Only</option>
+<option value="READ">Read Only</option>
+</select>
+<input type="date" id="answered-date-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<button onclick="markAllAnsweredAsRead()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition">Mark All Read</button>
+</div>
+</div>
+
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-20 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('answered','isRead')">STATUS<span id="sort-arrow-answered-isRead"></span></th>
+<th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('answered','eventName')">EVENT<span id="sort-arrow-answered-eventName"></span></th>
+<th class="p-3">QUESTION &amp; ANSWER PREVIEW</th>
+<th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('answered','answeredBy')">ANSWERED BY<span id="sort-arrow-answered-answeredBy"></span></th>
+<th class="p-3 w-24 text-center cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('answered','turnaroundHours')">SPEED<span id="sort-arrow-answered-turnaroundHours"></span></th>
+<th class="p-3 w-28 text-right">ACTION</th>
+</tr>
+</thead>
+<tbody id="answered-table-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<!-- TAB 3: GLOBAL TICKET FEED -->
+<section id="view-all-tickets" class="hidden space-y-6">
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+<div>
+<h2 class="text-base font-bold text-slate-800">Global Ticket Feed</h2>
+<p class="text-xs text-slate-500">Live stream of all questions and resolution activity</p>
+</div>
+<div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+<select id="all-type-filter" onchange="renderAllTickets()" class="border border-slate-300 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-medium">
+<option value="ALL">All Tickets</option>
+<option value="QUESTIONS">Open Questions Only</option>
+<option value="ANSWERED">Answered Only</option>
+</select>
+<input type="text" id="all-search" oninput="renderAllTickets()" placeholder="Search global feed..." class="border border-slate-300 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 w-full md:w-64">
+<input type="date" id="all-date-filter" onchange="renderAllTickets()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+</div>
+</div>
+
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-20 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('all','priority')">PRIO<span id="sort-arrow-all-priority"></span></th>
+<th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('all','eventName')">EVENT<span id="sort-arrow-all-eventName"></span></th>
+<th class="p-3">QUESTION</th>
+<th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('all','askedBy')">ASKED BY<span id="sort-arrow-all-askedBy"></span></th>
+<th class="p-3 w-16 text-center">LINK</th>
+<th class="p-3 w-28 text-center cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('all','statusLabel')">STATUS<span id="sort-arrow-all-statusLabel"></span></th>
+<th id="all-admin-th" class="p-3 w-28 text-right hidden">ADMIN</th>
+</tr>
+</thead>
+<tbody id="all-tickets-table-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<!-- TAB 4: SUPERVISOR DESK -->
+<section id="view-supervisor" class="hidden space-y-4">
+
+<!-- COMPACT KPI SUMMARY STRIP -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+<button onclick="supKpiClick('p1')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-rose-300 transition group">
+<p class="text-[9px] font-bold uppercase tracking-wider text-rose-600/80 group-hover:text-rose-600">P1 Urgent</p>
+<p id="sup-kpi-p1" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+</button>
+<button onclick="supKpiClick('unassigned')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-amber-300 transition group">
+<p class="text-[9px] font-bold uppercase tracking-wider text-amber-600/80 group-hover:text-amber-600">Unassigned</p>
+<p id="sup-kpi-unassigned" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+</button>
+<button onclick="supKpiClick('mine-active')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-emerald-300 transition group">
+<p class="text-[9px] font-bold uppercase tracking-wider text-emerald-600/80 group-hover:text-emerald-600">Assigned to Me (Active)</p>
+<p id="sup-kpi-mine" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+</button>
+<button onclick="supKpiClick('hold')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-purple-300 transition group">
+<p class="text-[9px] font-bold uppercase tracking-wider text-purple-600/80 group-hover:text-purple-600">On Hold</p>
+<p id="sup-kpi-hold" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+</button>
+<button onclick="supKpiClick('followup')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-indigo-300 transition group">
+<p class="text-[9px] font-bold uppercase tracking-wider text-indigo-600/80 group-hover:text-indigo-600">Follow-Ups</p>
+<p id="sup-kpi-followup" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+</button>
+</div>
+
+<!-- WORKLOAD BREAKDOWN STRIP -->
+<div id="sup-workload-strip" class="bg-white rounded-xl border border-slate-200/80 p-2.5 shadow-sm text-xs flex flex-wrap items-center gap-2">
+<span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider shrink-0">Assigned Workload:</span>
+<div id="sup-workload-pills" class="flex flex-wrap items-center gap-1.5 flex-1"></div>
+</div>
+
+<!-- FILTER / ACTION BAR -->
+<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3 sticky top-[104px] z-30">
+<div class="flex flex-wrap items-center gap-2">
+<div class="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-semibold">
+<button id="sup-scope-all" onclick="setSupScope('all')" class="px-3 py-1.5 bg-slate-900 text-white">All Queue</button>
+<button id="sup-scope-mine-all" onclick="setSupScope('mine-all')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Mine (All)</button>
+<button id="sup-scope-mine-active" onclick="setSupScope('mine-active')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Mine (Active)</button>
+<button id="sup-scope-unassigned" onclick="setSupScope('unassigned')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Unassigned</button>
+</div>
+<input type="text" id="sup-search" oninput="renderSupervisorDesk()" placeholder="Search queue..." class="border border-slate-200 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[140px]">
+<button id="sup-chip-p1" onclick="toggleSupChip('p1')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">P1</button>
+<button id="sup-chip-hold" onclick="toggleSupChip('hold')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">Hold</button>
+<button id="sup-chip-followup" onclick="toggleSupChip('followup')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">Follow-Up</button>
+<button onclick="toggleSupMore()" id="sup-more-btn" class="px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-500 hover:text-slate-800 underline">More filters</button>
+<button onclick="clearSupFilters()" class="px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-rose-600">Reset</button>
+</div>
+<div id="sup-more-panel" class="hidden mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
+<select id="sup-filter-askedby" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+<option value="">Asked by: anyone</option>
+</select>
+<select id="sup-filter-assignee" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+<option value="">Assigned to: anyone</option>
+</select>
+<input type="date" id="sup-filter-date" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+</div>
+</div>
+
+<!-- BULK ACTION BAR -->
+<div id="sup-bulk-bar" class="hidden bg-slate-900 text-white rounded-xl shadow-lg p-3 flex flex-wrap items-center gap-3">
+<span class="text-xs font-semibold"><span id="sup-bulk-count">0</span> selected</span>
+<select id="sup-bulk-assignee" class="text-slate-800 border border-slate-300 px-2 py-1 rounded-lg text-xs outline-none flex-1 min-w-[160px]"></select>
+<button onclick="submitBulkAssign()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold">Assign Selected</button>
+<button onclick="clearSupSelection()" class="text-slate-300 hover:text-white text-xs underline">Clear</button>
+</div>
+
+<!-- GROUPED QUEUE -->
+<div id="sup-groups" class="space-y-5"></div>
+</section>
+
+<!-- TAB 5: REPORTING ANALYTICS -->
+<section id="view-reporting" class="hidden space-y-6">
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+<div>
+<h2 class="text-base font-bold text-slate-800">Reporting Analytics</h2>
+<p class="text-xs text-slate-500">Queue health and team workload (all dates in CST)</p>
+</div>
+<div class="flex flex-wrap items-center gap-2">
+<select id="report-range-preset" onchange="handleReportRangeChange()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="ALL">All Time</option>
+<option value="TODAY">Today</option>
+<option value="YESTERDAY">Yesterday</option>
+<option value="THIS_WEEK">This Week</option>
+<option value="THIS_MONTH">This Month</option>
+<option value="THIS_YEAR">This Year</option>
+<option value="CUSTOM">Custom Range</option>
+</select>
+<div id="report-custom-range" class="hidden items-center gap-2">
+<input type="date" id="report-start-date" onchange="renderReporting()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<span class="text-xs text-slate-400">to</span>
+<input type="date" id="report-end-date" onchange="renderReporting()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+</div>
+</div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+<button onclick="filterReport('unanswered')" class="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 text-left hover:border-amber-300 transition">
+<p class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Open Questions</p>
+<p id="stat-unanswered" class="text-3xl font-bold text-slate-900 mt-1">0</p>
+</button>
+<button onclick="filterReport('answered')" class="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-4 text-left hover:border-emerald-300 transition">
+<p class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Resolved Tickets</p>
+<p id="stat-answered" class="text-3xl font-bold text-slate-900 mt-1">0</p>
+</button>
+<div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+<p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Avg Answered / Supervisor</p>
+<p id="stat-avg-per-supervisor" class="text-3xl font-bold text-slate-900 mt-1">0</p>
+</div>
+</div>
+
+<h3 class="text-sm font-bold text-slate-800 mb-2">Answered By — Workload &amp; Speed</h3>
+<div class="overflow-x-auto border rounded-xl border-slate-200 mb-6">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-44 cursor-pointer select-none hover:text-slate-700" onclick="sortReportBreakdown('name')">SUPERVISOR<span id="sort-arrow-reportBreakdown-name"></span></th>
+<th class="p-3 w-28 text-center cursor-pointer select-none hover:text-slate-700" onclick="sortReportBreakdown('count')">ANSWERED<span id="sort-arrow-reportBreakdown-count"></span></th>
+<th class="p-3 w-28 text-center cursor-pointer select-none hover:text-slate-700" onclick="sortReportBreakdown('avgHours')">AVG HOURS<span id="sort-arrow-reportBreakdown-avgHours"></span></th>
+<th class="p-3">SHARE</th>
+</tr>
+</thead>
+<tbody id="report-breakdown-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+
+<h3 id="report-detail-title" class="text-sm font-bold text-slate-800 mb-2">Unanswered Questions Queue</h3>
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3">QUESTION</th>
+<th class="p-3 w-36">ASKED BY</th>
+<th class="p-3 w-36">HANDLED BY</th>
+<th class="p-3 w-40 text-center">STATUS</th>
+</tr>
+</thead>
+<tbody id="report-table-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<!-- TAB 6: TEAM SETUP -->
+<section id="view-team" class="hidden space-y-6">
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<h2 class="text-base font-bold text-slate-800 mb-4">Add / Edit Team Member</h2>
+<form id="team-form" onsubmit="handleTeamSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<input type="hidden" id="team-original-email">
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Full Name *</label>
+<input type="text" id="team-name" required class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Title *</label>
+<select id="team-title" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs outline-none">
+<option value="Coordinator">Coordinator</option>
+<option value="Supervisor">Supervisor</option>
+<option value="Escalation Supervisor">Escalation Supervisor</option>
+<option value="Assistant Manager">Assistant Manager</option>
+<option value="Manager">Manager</option>
+</select>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status *</label>
+<select id="team-status" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs outline-none">
+<option value="active">active</option>
+<option value="inactive">inactive</option>
+</select>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Category *</label>
+<select id="team-category" onchange="toggleTeamPasswordField()" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs outline-none">
+<option value="Coordinator">Coordinator</option>
+<option value="Support">Support</option>
+<option value="Admin">Admin</option>
+</select>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Email *</label>
+<input type="email" id="team-email" required class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+</div>
+<div id="team-password-row" class="hidden">
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Admin Password (blank on edit = keep current)</label>
+<input type="password" id="team-password" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" autocomplete="new-password">
+</div>
+<div class="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-slate-100">
+<button type="button" onclick="resetTeamForm()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Clear</button>
+<button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-xs font-bold shadow-md transition">Save Member</button>
+</div>
+</form>
+</div>
+
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+<h2 class="text-base font-bold text-slate-800 mb-4">Team Roster</h2>
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead>
+<tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-40">NAME</th>
+<th class="p-3 w-36">TITLE</th>
+<th class="p-3 w-24">STATUS</th>
+<th class="p-3 w-28">CATEGORY</th>
+<th class="p-3">EMAIL</th>
+<th class="p-3 w-28 text-right">ACTION</th>
+</tr>
+</thead>
+<tbody id="team-table-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+</main>
+</div>
+
+<!-- CUSTOM DIALOG -->
+<div id="custom-dialog-overlay" class="fixed inset-0 bg-slate-950/70 z-[60] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+<div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-slate-200">
+<p id="custom-dialog-message" class="text-sm text-slate-800 font-medium leading-relaxed preserve-lines"></p>
+<div id="custom-dialog-input-row" class="hidden mt-3">
+<textarea id="custom-dialog-input" rows="3" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none"></textarea>
+</div>
+<div class="flex justify-end gap-2 mt-5">
+<button id="custom-dialog-cancel-btn" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Cancel</button>
+<button id="custom-dialog-ok-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md">OK</button>
+</div>
+</div>
+</div>
+
+<!-- ANSWER MODAL -->
+<div id="answer-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
+<div class="min-w-0 flex-1">
+<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">Resolve Ticket</span>
+<h3 id="amodal-event" class="text-base font-bold text-slate-900 mt-1.5 break-all">Event Name</h3>
+<p class="text-[11px] text-slate-400 mt-0.5">Asked by: <span id="amodal-asked" class="font-semibold text-slate-700"></span> · <span id="amodal-meta"></span></p>
+</div>
+<button onclick="closeAnswerModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
+</div>
+
+<div class="p-6 overflow-y-auto flex-1 min-h-0">
+<div id="modal-hold-banner" class="hidden mb-4 bg-purple-50/80 border border-purple-200/80 text-purple-900 rounded-xl p-3 text-xs">
+<p class="font-bold uppercase text-[10px] tracking-wider text-purple-700 mb-1">On Hold Reason</p>
+<p id="modal-hold-reason" class="font-medium break-words text-purple-900/90"></p>
+</div>
+
+<div class="space-y-4">
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Question Details</label>
+<div id="modal-question-text" class="preserve-lines bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs text-slate-800 leading-relaxed break-words"></div>
+</div>
+
+<div id="modal-link-container" class="min-w-0">
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Case / Event Link</label>
+<a id="modal-case-link" href="#" target="_blank" class="text-xs font-semibold text-blue-600 underline break-all"></a>
+</div>
+
+<div class="relative">
+<label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Supervisor Answer / Resolution *</label>
+
+<!-- Rich Text Toolbar for Answer -->
+<div class="border border-slate-300 rounded-t-xl bg-slate-50 p-1.5 flex items-center gap-1 border-b-0 text-xs text-slate-600">
+  <button type="button" onclick="execEditorCmd('bold')" class="px-2 py-0.5 rounded hover:bg-slate-200 font-bold" title="Bold">B</button>
+  <button type="button" onclick="execEditorCmd('italic')" class="px-2 py-0.5 rounded hover:bg-slate-200 italic" title="Italic">I</button>
+  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline" title="Insert Link">🔗 Link</button>
+  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer" title="Attach Image">
+    📷 Image <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
+  </label>
+</div>
+
+<!-- Rich ContentEditable Box for Answer -->
+<div id="modal-answer-input" contenteditable="true" onkeyup="handleModalMentionSearch(event)" onclick="handleModalMentionSearch(event)" class="rich-editor-content w-full border border-slate-300 p-3 rounded-b-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition bg-white leading-relaxed"></div>
+<input type="hidden" id="modal-inp-assigned-email">
+
+<!-- Mention Suggestions Popup for Modal -->
+<div id="modal-mention-dropdown" class="hidden absolute z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto w-64 text-xs divide-y divide-slate-100"></div>
+</div>
+
+<div class="flex items-center gap-2 border-t border-slate-100 pt-4">
+<button id="modal-hold-btn" onclick="putOnHold()" class="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/60 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition">Put on Hold</button>
+<button id="modal-resume-btn" onclick="resumeFromHold()" class="hidden bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition">Resume from Hold</button>
+</div>
+
+<div id="modal-assign-row" class="hidden border-t border-slate-100 pt-4">
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Or, assign this to another supervisor</label>
+<div class="flex gap-2">
+<select id="modal-assignee-select" class="flex-1 border border-slate-300 p-2 rounded-lg text-xs min-w-0"></select>
+<button onclick="submitModalAssign()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-semibold transition shrink-0">Assign</button>
+</div>
+</div>
+</div>
+</div>
+
+<div class="flex justify-end gap-2 p-6 pt-4 border-t shrink-0">
+<button onclick="closeAnswerModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Cancel</button>
+<button onclick="submitModalAnswer()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md">Submit &amp; Move to Answered</button>
+</div>
+</div>
+</div>
+
+<!-- VIEW MODAL -->
+<div id="view-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
+<div class="min-w-0 flex-1">
+<span id="vmodal-read-badge" class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-rose-500 text-white">UNREAD</span>
+<h3 id="vmodal-event" class="text-lg font-bold text-slate-900 mt-1 break-all">Event Name</h3>
+<p class="text-[11px] text-slate-400">Asked by: <span id="vmodal-asked" class="font-semibold text-slate-700"></span></p>
+</div>
+<button onclick="closeViewModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
+</div>
+
+<div class="space-y-4 text-xs p-6 overflow-y-auto flex-1 min-h-0">
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Question</label>
+<div id="vmodal-question" class="preserve-lines bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-slate-800 leading-relaxed break-words"></div>
+</div>
+
+<div>
+<label class="block text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Supervisor Answer</label>
+<div id="vmodal-answer" class="preserve-lines bg-emerald-50/50 p-4 rounded-xl border border-emerald-300/80 text-slate-900 text-sm leading-relaxed font-semibold shadow-inner break-words"></div>
+</div>
+
+<div class="grid grid-cols-2 gap-3 text-[11px] bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+<div><span class="text-slate-400">Answered By:</span> <strong id="vmodal-by" class="text-slate-800"></strong></div>
+<div><span class="text-slate-400">Resolution Speed:</span> <strong id="vmodal-speed" class="text-slate-800"></strong></div>
+<div class="col-span-2 min-w-0"><span class="text-slate-400">Case Link:</span> <a id="vmodal-link" href="#" target="_blank" class="text-blue-600 font-bold underline break-all">Open Case Link &rarr;</a></div>
+</div>
+</div>
+
+<div class="flex justify-between items-center p-6 pt-4 border-t shrink-0">
+<button id="vmodal-reopen-btn" onclick="reopenTicket()" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200/60 px-4 py-2 rounded-xl text-xs font-semibold transition">Reopen as Follow-Up</button>
+<div class="flex gap-2">
+<button id="vmodal-toggle-btn" onclick="toggleReadModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Mark as Read</button>
+<button onclick="closeViewModal()" class="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-xl text-xs font-bold shadow transition">Close</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ADMIN EDIT MODAL -->
+<div id="admin-edit-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
+<div class="min-w-0 flex-1">
+<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200/60">Admin Edit</span>
+<h3 class="text-base font-bold text-slate-900 mt-1">Edit Ticket Record</h3>
+</div>
+<button onclick="closeEditModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-lg leading-none">&times;</button>
+</div>
+
+<div class="space-y-4 overflow-y-auto flex-1 min-h-0 p-6">
+<input type="hidden" id="edit-sheet">
+<input type="hidden" id="edit-ticket-id">
+
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Event / Wedding Name</label>
+<input type="text" id="edit-event-name" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 outline-none">
+</div>
+
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Question</label>
+<div id="edit-question" contenteditable="true" class="rich-editor-content w-full border border-slate-300 p-3 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 outline-none bg-white leading-relaxed max-h-44 overflow-y-auto"></div>
+</div>
+
+<div id="edit-answer-row">
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Answer</label>
+<div id="edit-answer" contenteditable="true" class="rich-editor-content w-full border border-slate-300 p-3 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 outline-none bg-white leading-relaxed max-h-44 overflow-y-auto"></div>
+</div>
+
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Case / Event Link</label>
+<input type="url" id="edit-case-link" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 outline-none">
+</div>
+
+<div id="edit-urgent-row" class="flex items-center gap-2">
+<input type="checkbox" id="edit-urgent" class="w-4 h-4 accent-rose-600">
+<label class="text-xs font-bold text-rose-600">Mark as Urgent (P1)</label>
+</div>
+</div>
+
+<div class="flex justify-between items-center p-6 pt-4 border-t shrink-0">
+<button onclick="submitDeleteFromEditModal()" class="text-rose-600 hover:text-rose-800 font-semibold text-xs underline">Delete (archived to Deleted Records)</button>
+<div class="flex gap-2">
+<button onclick="closeEditModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Cancel</button>
+<button onclick="submitEditModal()" class="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md">Save Changes</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- TICKET DETAIL MODAL -->
+<div id="ticket-detail-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
+<div class="min-w-0 flex-1">
+<span id="tdmodal-status-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>
+<h3 id="tdmodal-event" class="text-lg font-bold text-slate-900 mt-1 break-all">Event Name</h3>
+<p class="text-[11px] text-slate-400">Asked by: <span id="tdmodal-asked" class="font-semibold text-slate-700"></span></p>
+</div>
+<button onclick="closeTicketDetailModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
+</div>
+
+<div class="space-y-4 text-xs p-6 overflow-y-auto flex-1 min-h-0">
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Question</label>
+<div id="tdmodal-question" class="preserve-lines bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-slate-800 leading-relaxed font-normal break-words"></div>
+</div>
+
+<div id="tdmodal-answer-section">
+<label class="block text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Supervisor Answer</label>
+<div id="tdmodal-answer" class="preserve-lines bg-emerald-50/50 p-4 rounded-xl border border-emerald-300/80 text-slate-900 text-sm leading-relaxed font-semibold shadow-inner break-words"></div>
+</div>
+
+<div id="tdmodal-unanswered-note" class="hidden bg-amber-50/60 border border-amber-200/80 text-amber-900 rounded-xl p-3 text-xs font-semibold">
+This ticket has not been answered yet.
+</div>
+
+<div class="grid grid-cols-2 gap-3 text-[11px] bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+<div><span class="text-slate-400">Answered By:</span> <strong id="tdmodal-by" class="text-slate-800"></strong></div>
+<div><span class="text-slate-400">Assigned To:</span> <strong id="tdmodal-assigned" class="text-slate-800"></strong></div>
+<div class="col-span-2 min-w-0"><span class="text-slate-400">Case Link:</span> <a id="tdmodal-link" href="#" target="_blank" class="text-blue-600 font-bold underline break-all">Open Case Link &rarr;</a></div>
+</div>
+</div>
+
+<div class="flex justify-end items-center p-6 pt-4 border-t shrink-0">
+<button onclick="closeTicketDetailModal()" class="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-xl text-xs font-bold shadow transition">Close</button>
+</div>
+</div>
+</div>
+
+<script>
+// ============================================================================
+// STATE
+// ============================================================================
+let currentUser = null;
+let allQuestions = [];
+let teamMembers = [];
+let currentTab = 'coordinator';
+let refreshTimer = null;
+
+let activeModalTicketId = null;
+let activeViewQuestion = null;
+let activeEditRecord = null;
+let editSnapshot = null;
+let currentReportType = 'unanswered';
+let reportBreakdownSort = { col: 'count', dir: 'desc' };
+
+// Supervisor Desk state
+let supScope = 'all'; // 'all', 'mine-all', 'mine-active', 'unassigned'
+let supChips = { p1: false, hold: false, followup: false };
+let supSelected = new Set();
+
+const sortState = {
+  coord: { col: null, dir: 'asc' },
+  answered: { col: null, dir: 'asc' },
+  all: { col: null, dir: 'asc' }
+};
+const SORT_ARROW_MAP = {
+  coord: ['priority', 'created', 'eventName', 'status'],
+  answered: ['isRead', 'eventName', 'answeredBy', 'turnaroundHours'],
+  all: ['priority', 'eventName', 'askedBy', 'statusLabel']
+};
+
+const REFRESH_INTERVAL_MS = 30000;
+const APP_TIMEZONE = 'America/Chicago';
+
+// ============================================================================
+// RICH TEXT & @MENTIONS UTILITIES
+// ============================================================================
+function execEditorCmd(cmd, arg = null) {
+  document.execCommand(cmd, false, arg);
+}
+
+function promptInsertLink() {
+  const url = prompt("Enter URL link:");
+  if (url && url.trim()) {
+    const cleanUrl = url.trim();
+    // Insert hyperlink with target="_blank"
+    const selectedText = window.getSelection().toString();
+    if (selectedText) {
+      execEditorCmd('insertHTML', `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline font-semibold">${selectedText}</a>`);
+    } else {
+      execEditorCmd('createLink', cleanUrl);
+    }
+  }
+}
+
+function handleImageInsert(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    execEditorCmd('insertImage', evt.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function parseMentionedUser(editorHtml) {
+  if (!editorHtml) return null;
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = editorHtml;
+  const textContent = tempDiv.innerText || tempDiv.textContent || "";
+  const activeMembers = teamMembers.filter(m => String(m.status).toLowerCase() === 'active');
+
+  for (let member of activeMembers) {
+    const mentionPattern = new RegExp('@' + member.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    if (mentionPattern.test(textContent)) {
+      return member;
+    }
+  }
+  return null;
+}
+
+function handleMentionSearch(e) {
+  const editor = document.getElementById('editor-inp-question');
+  const dropdown = document.getElementById('mention-dropdown');
+  const text = editor.innerText || editor.textContent || "";
+  
+  const words = text.split(/\s+/);
+  const lastWord = words[words.length - 1];
+
+  if (lastWord.startsWith('@')) {
+    const query = lastWord.substring(1).toLowerCase();
+    const matches = teamMembers.filter(m => String(m.status).toLowerCase() === 'active' && m.name.toLowerCase().includes(query));
+    
+    if (matches.length > 0) {
+      dropdown.innerHTML = '';
+      matches.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center';
+        item.innerHTML = '<span class="font-bold text-slate-800">' + esc(m.name) + '</span><span class="text-[10px] text-slate-400">' + esc(m.title) + '</span>';
+        item.onclick = () => selectMention(m);
+        dropdown.appendChild(item);
+      });
+      dropdown.classList.remove('hidden');
+      return;
+    }
+  }
+  
+  const detectedMember = parseMentionedUser(editor.innerHTML);
+  if (detectedMember) {
+    document.getElementById('inp-assigned-email').value = detectedMember.email;
+  }
+  
+  dropdown.classList.add('hidden');
+}
+
+function selectMention(member) {
+  const editor = document.getElementById('editor-inp-question');
+  const dropdown = document.getElementById('mention-dropdown');
+  
+  let html = editor.innerHTML;
+  html = html.replace(/@\w*$/, '<span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold" contenteditable="false">@' + esc(member.name) + '</span>&nbsp;');
+  editor.innerHTML = html;
+  
+  document.getElementById('inp-assigned-email').value = member.email;
+  dropdown.classList.add('hidden');
+}
+
+function handleModalMentionSearch(e) {
+  const editor = document.getElementById('modal-answer-input');
+  const dropdown = document.getElementById('modal-mention-dropdown');
+  const text = editor.innerText || editor.textContent || "";
+  
+  const words = text.split(/\s+/);
+  const lastWord = words[words.length - 1];
+
+  if (lastWord.startsWith('@')) {
+    const query = lastWord.substring(1).toLowerCase();
+    const matches = teamMembers.filter(m => String(m.status).toLowerCase() === 'active' && m.name.toLowerCase().includes(query));
+    
+    if (matches.length > 0) {
+      dropdown.innerHTML = '';
+      matches.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center';
+        item.innerHTML = '<span class="font-bold text-slate-800">' + esc(m.name) + '</span><span class="text-[10px] text-slate-400">' + esc(m.title) + '</span>';
+        item.onclick = () => selectModalMention(m);
+        dropdown.appendChild(item);
+      });
+      dropdown.classList.remove('hidden');
+      return;
+    }
+  }
+  
+  const detectedMember = parseMentionedUser(editor.innerHTML);
+  if (detectedMember) {
+    document.getElementById('modal-inp-assigned-email').value = detectedMember.email;
+  }
+  
+  dropdown.classList.add('hidden');
+}
+
+function selectModalMention(member) {
+  const editor = document.getElementById('modal-answer-input');
+  const dropdown = document.getElementById('modal-mention-dropdown');
+  
+  let html = editor.innerHTML;
+  html = html.replace(/@\w*$/, '<span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold" contenteditable="false">@' + esc(member.name) + '</span>&nbsp;');
+  editor.innerHTML = html;
+  
+  document.getElementById('modal-inp-assigned-email').value = member.email;
+  dropdown.classList.add('hidden');
+}
+
+// ============================================================================
+// CST HELPERS & GENERIC UTILS
+// ============================================================================
+function cstDateString(isoOrDate) {
+  if (!isoOrDate) return '';
+  const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+}
+
+function formatCSTDateTime(isoOrDate, opts) {
+  if (!isoOrDate) return '—';
+  const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-US', Object.assign({ timeZone: APP_TIMEZONE }, opts || {}));
+}
+
+function getCSTOffsetMinutes(date) {
+  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const cstDate = new Date(date.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
+  return (utcDate.getTime() - cstDate.getTime()) / 60000;
+}
+
+function cstDayBoundary(date, endOfDay) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const y = parseInt(parts.find(p => p.type === 'year').value, 10);
+  const m = parseInt(parts.find(p => p.type === 'month').value, 10);
+  const d = parseInt(parts.find(p => p.type === 'day').value, 10);
+  const guess = endOfDay
+    ? new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999))
+    : new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  const offsetMin = getCSTOffsetMinutes(guess);
+  return new Date(guess.getTime() + offsetMin * 60000);
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getUserDisplayName(val) {
+  if (!val) return '—';
+  const cleanVal = String(val).trim().toLowerCase();
+  const match = teamMembers.find(m => m.email.toLowerCase() === cleanVal || m.name.toLowerCase() === cleanVal);
+  return match ? match.name : val;
+}
+
+const SUPERVISOR_TITLES = ['Manager', 'Assistant Manager', 'Supervisor', 'Escalation Supervisor'];
+function isSupportUser(m) {
+  if (!m) return false;
+  if (String(m.status).toLowerCase() !== 'active') return false;
+  return m.category === 'Support' || m.category === 'Admin' || SUPERVISOR_TITLES.includes(m.title);
+}
+function isAdminUser(m) {
+  return !!m && m.category === 'Admin' && String(m.status).toLowerCase() === 'active';
+}
+
+// Live-roster lookup: true when the person who asked a given ticket is
+// themselves a Support or Admin team member (i.e. this is an internal
+// support/escalation conversation, not a coordinator-facing question).
+// No schema change needed - this is derived purely from teamMembers at
+// render time, matched first by askedByEmail, then by askedBy name.
+function findAskerTeamMember(q) {
+  if (!q) return null;
+  const email = String(q.askedByEmail || '').trim().toLowerCase();
+  if (email) {
+    const byEmail = teamMembers.find(m => m.email.toLowerCase() === email);
+    if (byEmail) return byEmail;
+  }
+  const name = String(q.askedBy || '').trim().toLowerCase();
+  if (!name) return null;
+  return teamMembers.find(m => m.name.toLowerCase() === name) || null;
+}
+function isAskedBySupport(q) {
+  const member = findAskerTeamMember(q);
+  return !!member && (member.category === 'Support' || member.category === 'Admin');
+}
+function internalBadgeHtml() {
+  return ' <span class="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-purple-50 text-purple-700 border border-purple-200/60">Internal Support</span>';
+}
+
+function normalizePriority(prio) {
+  if (!prio) return 'P4';
+  const clean = String(prio).trim().toUpperCase();
+  if (['P1', 'P2', 'P3', 'P4', 'RESOLVED'].includes(clean)) return clean;
+  return 'P4';
+}
+
+const EVENT_NAME_INVALID_MSG = "That doesn't look like a name - please re-enter the Event/Client/Talent name as text, or put NA if no event or contact is available/connected.";
+function isValidEventName(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+
+  // Check if the user accidentally pasted a URL (e.g. https://, http://, www., or contains ://)
+  const isUrl = /^(https?:\/\/|www\.)/i.test(value) || /:\/\//.test(value) || /^(ftp|file):\/\//i.test(value);
+
+  // If it's a URL, reject it so the user puts the URL in the Case Link field instead
+  if (isUrl) return false;
+
+  // Accept ANY other text string, naming convention, or character set
+  return true;
+}
+
+function waitColorClass(hours) {
+  const h = parseFloat(hours) || 0;
+  if (h >= 6) return 'text-rose-600 font-semibold bg-rose-50/80 px-2 py-0.5 rounded border border-rose-200/50';
+  if (h >= 3) return 'text-amber-700 font-medium bg-amber-50/80 px-2 py-0.5 rounded border border-amber-200/50';
+  return 'text-slate-500 font-medium bg-slate-100/80 px-2 py-0.5 rounded';
+}
+
+function isOwnerOf(q) {
+  if (!currentUser) return false;
+  const uEmail = (currentUser.email || '').toLowerCase();
+  const uName = (currentUser.name || '').trim().toLowerCase();
+  const qEmail = (q.askedByEmail || '').toLowerCase();
+  if (qEmail) return qEmail === uEmail;
+  return (q.askedBy || '').trim().toLowerCase() === uName;
+}
+
+function showHoldReasonAlert(reason) {
+  customAlert('On Hold Reason:\n' + (reason || 'No reason provided.'));
+}
+
+// ============================================================================
+// CUSTOM DIALOG ENGINE
+// ============================================================================
+let customDialogResolver = null;
+
+function initCustomDialog() {
+  const okBtn = document.getElementById('custom-dialog-ok-btn');
+  const cancelBtn = document.getElementById('custom-dialog-cancel-btn');
+  if (okBtn) okBtn.onclick = () => resolveCustomDialog(true);
+  if (cancelBtn) cancelBtn.onclick = () => resolveCustomDialog(false);
+}
+
+function resolveCustomDialog(result) {
+  document.getElementById('custom-dialog-overlay').classList.add('hidden');
+  if (customDialogResolver) {
+    const resolve = customDialogResolver;
+    customDialogResolver = null;
+    resolve(result);
+  }
+}
+
+function showCustomDialog(opts) {
+  return new Promise(resolve => {
+    customDialogResolver = resolve;
+    document.getElementById('custom-dialog-message').innerText = opts.message || '';
+
+    const inputRow = document.getElementById('custom-dialog-input-row');
+    const input = document.getElementById('custom-dialog-input');
+    input.value = '';
+    input.placeholder = opts.placeholder || '';
+    inputRow.classList.toggle('hidden', opts.mode !== 'prompt');
+
+    const cancelBtn = document.getElementById('custom-dialog-cancel-btn');
+    cancelBtn.classList.toggle('hidden', opts.mode === 'alert');
+    cancelBtn.innerText = opts.cancelLabel || 'Cancel';
+
+    const okBtn = document.getElementById('custom-dialog-ok-btn');
+    okBtn.innerText = opts.okLabel || 'OK';
+    okBtn.className = opts.danger
+      ? 'bg-rose-600 hover:bg-rose-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md'
+      : 'bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md';
+
+    document.getElementById('custom-dialog-overlay').classList.remove('hidden');
+    if (opts.mode === 'prompt') setTimeout(() => input.focus(), 50);
+  });
+}
+
+function customAlert(message) { return showCustomDialog({ message: message, mode: 'alert' }).then(() => {}); }
+function customConfirm(message, opts) { return showCustomDialog(Object.assign({ message: message, mode: 'confirm' }, opts || {})); }
+function customPrompt(message, opts) {
+  return showCustomDialog(Object.assign({ message: message, mode: 'prompt' }, opts || {})).then(ok => {
+    if (!ok) return null;
+    return document.getElementById('custom-dialog-input').value;
+  });
+}
+
+// ============================================================================
+// BOOT + LOGIN
+// ============================================================================
+window.onload = function() {
+  document.getElementById('current-date').innerText =
+    new Date().toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' · CST';
+  initCustomDialog();
+  google.script.run.withSuccessHandler(team => {
+    teamMembers = team || [];
+    populateLoginDropdown();
+  }).getTeamMembers();
+};
+
+function populateLoginDropdown() {
+  const select = document.getElementById('login-user-select');
+  select.innerHTML = '<option value="">-- Select your name --</option>';
+  teamMembers
+    .filter(m => String(m.status).toLowerCase() === 'active')
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.email;
+      opt.innerText = m.name + ' — ' + m.title;
+      select.appendChild(opt);
+    });
+}
+
+function toggleLoginPasswordField() {
+  const email = document.getElementById('login-user-select').value;
+  const member = teamMembers.find(m => m.email === email);
+  const isAdmin = member && member.category === 'Admin';
+  document.getElementById('login-password-row').classList.toggle('hidden', !isAdmin);
+  document.getElementById('login-error-msg').classList.add('hidden');
+}
+
+function executeLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-user-select').value;
+  const member = teamMembers.find(m => m.email === email);
+  if (!member) return;
+
+  const btn = document.getElementById('login-submit-btn');
+  const errEl = document.getElementById('login-error-msg');
+  errEl.classList.add('hidden');
+
+  if (member.category === 'Admin') {
+    const pw = document.getElementById('login-password-input').value;
+    btn.disabled = true;
+    btn.innerText = 'Verifying...';
+    google.script.run.withFailureHandler(err => {
+      btn.disabled = false;
+      btn.innerHTML = 'Sign In to Portal &rarr;';
+      errEl.innerText = (err && err.message) ? err.message : String(err);
+      errEl.classList.remove('hidden');
+    }).withSuccessHandler(() => {
+      btn.disabled = false;
+      btn.innerHTML = 'Sign In to Portal &rarr;';
+      finishLogin(member);
+    }).verifyAdminPassword(member.email, pw);
+  } else {
+    finishLogin(member);
+  }
+}
+
+function finishLogin(member) {
+  currentUser = member;
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.getElementById('app-container').classList.remove('hidden');
+
+  document.getElementById('header-user-name').innerText = member.name;
+  const roleTag = document.getElementById('user-role-tag');
+  roleTag.innerText = member.category;
+  roleTag.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase ' +
+    (member.category === 'Admin' ? 'bg-purple-400 text-slate-950'
+      : isSupportUser(member) ? 'bg-amber-400 text-slate-950'
+      : 'bg-emerald-400 text-slate-950');
+  document.getElementById('log-filter-user').innerText = member.name;
+
+  const support = isSupportUser(member);
+  document.getElementById('tab-supervisor').classList.toggle('hidden', !support);
+  document.getElementById('tab-supervisor').classList.toggle('flex', support);
+  document.getElementById('tab-reporting').classList.toggle('hidden', !support);
+  document.getElementById('tab-team').classList.toggle('hidden', !support);
+  document.getElementById('all-admin-th').classList.toggle('hidden', !isAdminUser(member));
+
+  // Internal Support Questions Only scope option is only meaningful (and only
+  // shown) for Support/Admin users, since Coordinators never see internal tickets.
+  const internalOpt = document.getElementById('answered-scope-internal-opt');
+  if (internalOpt) {
+    internalOpt.classList.toggle('hidden', !support);
+    if (!support && document.getElementById('answered-scope-filter').value === 'INTERNAL') {
+      document.getElementById('answered-scope-filter').value = 'ALL';
+    }
+  }
+
+  populateFilterDropdowns();
+  refreshData();
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(refreshData, REFRESH_INTERVAL_MS);
+}
+
+function logoutToLogin() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  currentUser = null;
+
+  const passwordInput = document.getElementById('login-password-input');
+  if (passwordInput) passwordInput.value = '';
+  
+  const errorMsg = document.getElementById('login-error-msg');
+  if (errorMsg) errorMsg.classList.add('hidden');
+
+  const select = document.getElementById('login-user-select');
+  if (select) select.value = '';
+  toggleLoginPasswordField();
+
+  document.getElementById('app-container').classList.add('hidden');
+  document.getElementById('login-overlay').classList.remove('hidden');
+
+  google.script.run.withSuccessHandler(team => {
+    teamMembers = team || [];
+    populateLoginDropdown();
+  }).getTeamMembers();
+}
+
+// ============================================================================
+// TABS + DATA REFRESH
+// ============================================================================
+function switchTab(name) {
+  currentTab = name;
+  const tabs = ['coordinator', 'answered', 'all-tickets', 'supervisor', 'reporting', 'team'];
+  tabs.forEach(t => {
+    const view = document.getElementById('view-' + t);
+    const tab = document.getElementById('tab-' + t);
+    if (view) view.classList.toggle('hidden', t !== name);
+    if (tab) {
+      tab.classList.toggle('text-emerald-400', t === name);
+      tab.classList.toggle('border-b-2', t === name);
+      tab.classList.toggle('border-emerald-400', t === name);
+      tab.classList.toggle('text-slate-400', t !== name);
+    }
+  });
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  if (currentTab === 'coordinator') renderCoordinatorQuestions();
+  else if (currentTab === 'answered') renderAnsweredTab();
+  else if (currentTab === 'all-tickets') renderAllTickets();
+  else if (currentTab === 'supervisor') renderSupervisorDesk();
+  else if (currentTab === 'reporting') renderReporting();
+  else if (currentTab === 'team') renderTeamTable();
+}
+
+function refreshData() {
+  if (!currentUser) return;
+  google.script.run.withSuccessHandler(records => {
+    allQuestions = records || [];
+    updateTickers();
+    renderCurrentTab();
+  }).getQuestionsData(currentUser.email);
+
+  google.script.run.withSuccessHandler(team => {
+    teamMembers = team || [];
+    populateFilterDropdowns();
+  }).getTeamMembers();
+}
+
+function updateTickers() {
+  const userIsSupport = isSupportUser(currentUser);
+  const unread = allQuestions.filter(q =>
+    q.sheet === 'Answered' && !q.isRead && !(isAskedBySupport(q) && !userIsSupport) && (isOwnerOf(q) || userIsSupport)
+  ).length;
+  const unreadEl = document.getElementById('unread-ticker');
+  unreadEl.innerText = unread;
+  unreadEl.classList.toggle('hidden', unread === 0);
+
+  const pending = allQuestions.filter(q => q.sheet === 'Questions Tracker').length;
+  const pendingEl = document.getElementById('pending-ticker');
+  pendingEl.innerText = pending;
+  pendingEl.classList.toggle('hidden', pending === 0);
+}
+
+// ============================================================================
+// SHARED SORT INFRASTRUCTURE
+// ============================================================================
+function onSortHeaderClick(tableKey, column) {
+  const s = sortState[tableKey];
+  if (s.col === column) {
+    s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    s.col = column;
+    s.dir = 'asc';
+  }
+  if (tableKey === 'coord') renderCoordinatorQuestions();
+  else if (tableKey === 'answered') renderAnsweredTab();
+  else if (tableKey === 'all') renderAllTickets();
+}
+
+function refreshSortArrows(tableKey) {
+  (SORT_ARROW_MAP[tableKey] || []).forEach(col => {
+    const el = document.getElementById('sort-arrow-' + tableKey + '-' + col);
+    if (!el) return;
+    const s = sortState[tableKey];
+    el.textContent = (s.col === col) ? (s.dir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+  });
+}
+
+const PRIO_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4, RESOLVED: 5 };
+function applySort(list, tableKey) {
+  const s = sortState[tableKey];
+  refreshSortArrows(tableKey);
+  if (!s.col) return list;
+  const col = s.col, dir = s.dir === 'asc' ? 1 : -1;
+  return list.slice().sort((a, b) => {
+    let av, bv;
+    if (col === 'priority') { av = PRIO_ORDER[normalizePriority(a.priority)] || 9; bv = PRIO_ORDER[normalizePriority(b.priority)] || 9; }
+    else if (col === 'created' || col === 'answeredDate') { av = new Date(a[col] || 0).getTime(); bv = new Date(b[col] || 0).getTime(); }
+    else if (col === 'turnaroundHours' || col === 'hoursElapsed') { av = parseFloat(a[col]) || 0; bv = parseFloat(b[col]) || 0; }
+    else if (col === 'isRead') { av = a.isRead ? 1 : 0; bv = b.isRead ? 1 : 0; }
+    else if (col === 'statusLabel') { av = statusLabelOf(a); bv = statusLabelOf(b); }
+    else { av = String(a[col] || '').toLowerCase(); bv = String(b[col] || '').toLowerCase(); }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+}
+
+function statusLabelOf(q) {
+  if (q.sheet === 'Answered' || q.status === 'Answered') return 'Answered';
+  if (q.status === 'Hold') return 'On Hold';
+  return 'Open';
+}
+
+// ============================================================================
+// TAB 1: COORDINATOR WORKSPACE
+// ============================================================================
+async function handleQuestionSubmit(e) {
+  e.preventDefault();
+  const editorEl = document.getElementById('editor-inp-question');
+  const questionHtml = editorEl.innerHTML.trim();
+  const questionText = editorEl.innerText.trim();
+  const eventName = document.getElementById('inp-event').value.trim();
+  const caseLink = document.getElementById('inp-link').value.trim();
+  const isUrgent = document.getElementById('inp-urgent').checked;
+
+  if (!questionText) { await customAlert('Please describe your question before submitting.'); return; }
+  if (!isValidEventName(eventName)) { await customAlert(EVENT_NAME_INVALID_MSG); return; }
+
+  let assignedToEmail = document.getElementById('inp-assigned-email').value;
+  if (!assignedToEmail) {
+    const detectedMember = parseMentionedUser(questionHtml);
+    if (detectedMember) {
+      assignedToEmail = detectedMember.email;
+    }
+  }
+
+  const btn = document.getElementById('question-submit-btn');
+  btn.disabled = true;
+  btn.innerText = 'Submitting...';
+
+  google.script.run.withFailureHandler(err => {
+    btn.disabled = false;
+    btn.innerText = 'Submit Question';
+    showToast('Could not submit: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(res => {
+    btn.disabled = false;
+    btn.innerText = 'Submit Question';
+    if (res && res.duplicate) {
+      showToast(res.message);
+      return;
+    }
+    document.getElementById('question-form').reset();
+    editorEl.innerHTML = '';
+    document.getElementById('inp-assigned-email').value = '';
+    refreshData();
+    showToast('Question submitted successfully!');
+  }).submitQuestion({
+    question: questionHtml,
+    eventName: eventName,
+    caseLink: caseLink,
+    isUrgent: isUrgent,
+    assignedToEmail: assignedToEmail || "",
+    askedByEmail: currentUser.email
+  });
+}
+
+function renderCoordinatorQuestions() {
+  const search = (document.getElementById('coord-search').value || '').toLowerCase();
+  const prioFilter = document.getElementById('coord-prio-filter').value;
+  const dateFilter = document.getElementById('coord-date-filter').value;
+  const body = document.getElementById('coord-table-body');
+  if (!body || !currentUser) return;
+  body.innerHTML = '';
+
+  const mine = allQuestions.filter(q => {
+    if (q.sheet !== 'Questions Tracker') return false;
+    if (!isOwnerOf(q)) return false;
+    const matchesSearch = q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search);
+    const matchesPrio = prioFilter === 'ALL' || normalizePriority(q.priority) === prioFilter;
+    const matchesDate = !dateFilter || cstDateString(q.created) === dateFilter;
+    return matchesSearch && matchesPrio && matchesDate;
+  });
+
+  const sorted = applySort(mine, 'coord');
+
+  if (sorted.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No active questions. Submit one above!</td></tr>';
+    return;
+  }
+
+  sorted.forEach(q => {
+    const prio = normalizePriority(q.priority);
+    const prioClass = prio === 'P1' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
+      prio === 'P2' ? 'bg-orange-50 text-orange-700 border border-orange-200/60' :
+      prio === 'P3' ? 'bg-amber-50 text-amber-700 border border-amber-200/60' : 'bg-slate-50 text-slate-600 border border-slate-200/60';
+    const onHold = q.status === 'Hold';
+    const statusHtml = onHold
+      ? '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 cursor-pointer" onclick="showHoldReasonAlert(\'' + esc(q.holdReason) + '\')">On Hold</span>'
+      : '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>';
+    const followTag = q.isFollowUp ? ' <span class="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60">Follow-Up</span>' : '';
+
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition';
+    tr.innerHTML =
+      '<td class="p-3"><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded ' + prioClass + '">' + prio + '</span></td>' +
+      '<td class="p-3 text-slate-500">' + formatCSTDateTime(q.created, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</td>' +
+      '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName) + '</td>' +
+      '<td class="p-3 text-slate-700 truncate">' + q.question + followTag + '</td>' +
+      '<td class="p-3 text-center">' + statusHtml + '</td>' +
+      '<td class="p-3 text-right"><button onclick="addUpdateToQuestion(\'' + esc(q.ticketId) + '\')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">Add Info</button></td>';
+    body.appendChild(tr);
+  });
+}
+
+async function addUpdateToQuestion(ticketId) {
+  const text = await customPrompt('Add more info to this ticket (visible to whoever answers it):', { placeholder: 'Type your update...' });
+  if (!text || !text.trim()) return;
+
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not add update: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshData();
+    showToast('Update added to ticket.');
+  }).addQuestionUpdate(ticketId, text.trim(), currentUser.email);
+}
+
+// ============================================================================
+// TAB 2: ANSWERED TICKETS
+// ============================================================================
+function renderAnsweredTab() {
+  const scope = document.getElementById('answered-scope-filter').value;
+  const search = (document.getElementById('answered-search').value || '').toLowerCase();
+  const askedByFilter = document.getElementById('answered-askedby-filter').value;
+  const answeredByFilter = document.getElementById('answered-by-filter').value;
+  const readFilter = document.getElementById('answered-read-filter').value;
+  const dateFilter = document.getElementById('answered-date-filter').value;
+
+  const body = document.getElementById('answered-table-body');
+  if (!body || !currentUser) return;
+  body.innerHTML = '';
+
+  const userIsSupport = isSupportUser(currentUser);
+
+  const answeredList = allQuestions.filter(q => {
+    if (q.sheet !== 'Answered') return false;
+
+    // Coordinator isolation: standard Coordinators never see internal
+    // Support/Admin conversations here, regardless of other filters.
+    const internal = isAskedBySupport(q);
+    if (internal && !userIsSupport) return false;
+
+    // Scope check: MINE vs ALL vs INTERNAL (internal is only reachable by
+    // Support/Admin - the option is hidden from Coordinators in the UI).
+    if (scope === 'MINE' && !isOwnerOf(q)) return false;
+    if (scope === 'INTERNAL' && !internal) return false;
+
+    // Search filter
+    const matchesSearch = q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search) || q.answer.toLowerCase().includes(search);
+    if (!matchesSearch) return false;
+
+    // Asked by & Answered by filters
+    if (askedByFilter && (q.askedByEmail || '').toLowerCase() !== askedByFilter.toLowerCase()) return false;
+    if (answeredByFilter && (q.answeredBy || '').toLowerCase() !== answeredByFilter.toLowerCase() && getUserDisplayName(q.answeredBy).toLowerCase() !== answeredByFilter.toLowerCase()) return false;
+
+    // Read state filter
+    if (readFilter === 'UNREAD' && q.isRead) return false;
+    if (readFilter === 'READ' && !q.isRead) return false;
+
+    // Date filter
+    if (dateFilter && q.answeredDate && cstDateString(q.answeredDate) !== dateFilter) return false;
+
+    return true;
+  });
+
+  const sorted = applySort(answeredList, 'answered');
+
+  if (sorted.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No answered questions match current filters.</td></tr>';
+    return;
+  }
+
+  sorted.forEach(q => {
+    const internalTag = isAskedBySupport(q) ? internalBadgeHtml() : '';
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-100/80 cursor-pointer transition ' + (!q.isRead ? 'bg-amber-50/40 font-semibold' : '');
+    tr.onclick = (e) => { if (e.target.tagName !== 'BUTTON') openViewModal(q); };
+    tr.innerHTML =
+      '<td class="p-3"><span class="px-2 py-0.5 text-[9px] font-bold rounded ' + (q.isRead ? 'bg-slate-100 text-slate-500 border border-slate-200/60' : 'bg-rose-500 text-white shadow-sm') + '">' + (q.isRead ? 'READ' : 'UNREAD') + '</span></td>' +
+      '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName) + internalTag + '</td>' +
+      '<td class="p-3"><div class="text-slate-900 truncate font-semibold">' + q.question + '</div><div class="text-emerald-700 text-[11px] truncate font-medium">' + q.answer + '</div></td>' +
+      '<td class="p-3 text-slate-700 font-medium truncate">' + esc(getUserDisplayName(q.answeredBy)) + '</td>' +
+      '<td class="p-3 text-center font-mono text-[11px] text-slate-500">' + esc(q.turnaroundHours) + ' hrs</td>' +
+      '<td class="p-3 text-right"><button onclick="toggleRead(\'' + esc(q.ticketId) + '\', ' + (!q.isRead) + ')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">' + (q.isRead ? 'Unread' : 'Read') + '</button></td>';
+    body.appendChild(tr);
+  });
+}
+
+function markAllAnsweredAsRead() {
+  const userIsSupport = isSupportUser(currentUser);
+  const unreadTickets = allQuestions.filter(q => q.sheet === 'Answered' && !q.isRead && !(isAskedBySupport(q) && !userIsSupport));
+  if (unreadTickets.length === 0) {
+    showToast('All answered tickets are already marked as read.');
+    return;
+  }
+
+  unreadTickets.forEach(q => {
+    q.isRead = true;
+    toggleRead(q.ticketId, true);
+  });
+  showToast('Marked all answered tickets as read.');
+}
+
+function openViewModal(q) {
+  activeViewQuestion = q;
+  document.getElementById('vmodal-event').innerText = q.eventName || '—';
+  document.getElementById('vmodal-asked').innerText = getUserDisplayName(q.askedBy);
+  document.getElementById('vmodal-question').innerHTML = q.question || '—';
+  document.getElementById('vmodal-answer').innerHTML = q.answer || 'No answer recorded.';
+  document.getElementById('vmodal-by').innerText = getUserDisplayName(q.answeredBy);
+  document.getElementById('vmodal-speed').innerText = q.turnaroundHours + ' Hours' + (q.holdHoursExcluded ? ' (excludes ' + q.holdHoursExcluded.toFixed(1) + ' hrs on hold)' : '');
+
+  const linkEl = document.getElementById('vmodal-link');
+  if (q.caseLink) { linkEl.href = q.caseLink; linkEl.classList.remove('hidden'); }
+  else { linkEl.classList.add('hidden'); }
+
+  const canReopen = isOwnerOf(q) || isSupportUser(currentUser);
+  const reopenBtn = document.getElementById('vmodal-reopen-btn');
+  reopenBtn.classList.toggle('hidden', !canReopen);
+
+  updateModalReadUI(q.isRead);
+  document.getElementById('view-modal').classList.remove('hidden');
+
+  if (!q.isRead) { activeViewQuestion.isRead = true; updateModalReadUI(true); toggleRead(q.ticketId, true); }
+}
+
+async function reopenTicket() {
+  if (!activeViewQuestion) return;
+  const q = activeViewQuestion;
+  const text = await customPrompt('Describe your follow-up question or additional info:', { placeholder: 'Describe the follow-up...' });
+  if (!text || !text.trim()) return;
+  const confirmed = await customConfirm('Reopen this ticket and send it back to the Supervisor Desk?', { okLabel: 'Reopen Ticket' });
+  if (!confirmed) return;
+
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not reopen ticket: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    closeViewModal();
+    refreshData();
+    showToast('Ticket reopened as a follow-up.');
+  }).reopenAnsweredTicket(q.ticketId, text.trim(), currentUser.email);
+}
+
+function updateModalReadUI(isRead) {
+  const badge = document.getElementById('vmodal-read-badge');
+  const btn = document.getElementById('vmodal-toggle-btn');
+  if (isRead) {
+    badge.innerText = 'READ';
+    badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/60';
+    btn.innerText = 'Mark as Unread';
+  } else {
+    badge.innerText = 'UNREAD';
+    badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500 text-white';
+    btn.innerText = 'Mark as Read';
+  }
+}
+
+function toggleReadModal() {
+  if (!activeViewQuestion) return;
+  const newStatus = !activeViewQuestion.isRead;
+  activeViewQuestion.isRead = newStatus;
+  updateModalReadUI(newStatus);
+  toggleRead(activeViewQuestion.ticketId, newStatus);
+}
+
+function closeViewModal() {
+  activeViewQuestion = null;
+  document.getElementById('view-modal').classList.add('hidden');
+}
+
+function toggleRead(ticketId, newStatus) {
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not update read status: ' + (err && err.message ? err.message : err));
+    refreshData();
+  }).withSuccessHandler(() => {
+    refreshData();
+  }).toggleReadStatus(ticketId, newStatus, currentUser.email);
+}
+
+// ============================================================================
+// TAB 3: GLOBAL TICKET FEED
+// ============================================================================
+function renderAllTickets() {
+  const search = (document.getElementById('all-search').value || '').toLowerCase();
+  const typeFilter = document.getElementById('all-type-filter').value;
+  const dateFilter = document.getElementById('all-date-filter').value;
+  const body = document.getElementById('all-tickets-table-body');
+  if (!body || !currentUser) return;
+  body.innerHTML = '';
+
+  const userIsSupport = isSupportUser(currentUser);
+
+  const filtered = allQuestions.filter(q => {
+    // Coordinator isolation: internal Support/Admin questions and
+    // managerial escalations stay hidden from standard Coordinators here.
+    if (isAskedBySupport(q) && !userIsSupport) return false;
+
+    const matchesSearch = q.question.toLowerCase().includes(search) ||
+      q.eventName.toLowerCase().includes(search) ||
+      getUserDisplayName(q.askedBy).toLowerCase().includes(search);
+    let matchesType = true;
+    if (typeFilter === 'QUESTIONS') matchesType = (q.sheet === 'Questions Tracker');
+    if (typeFilter === 'ANSWERED') matchesType = (q.sheet === 'Answered');
+    const matchesDate = !dateFilter || (q.created && cstDateString(q.created) === dateFilter);
+    return matchesSearch && matchesType && matchesDate;
+  });
+
+  const sorted = applySort(filtered, 'all');
+
+  if (sorted.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">No ticket records found.</td></tr>';
+    return;
+  }
+
+  const isAdmin = isAdminUser(currentUser);
+
+  sorted.forEach(q => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition border-b border-slate-100 cursor-pointer';
+    tr.onclick = (e) => {
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      openTicketDetail(q.sheet, q.ticketId);
+    };
+    const cleanPrio = normalizePriority(q.priority);
+    const prioClass = cleanPrio === 'P1' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
+      cleanPrio === 'P2' ? 'bg-orange-50 text-orange-700 border border-orange-200/60' :
+      cleanPrio === 'P3' ? 'bg-amber-50 text-amber-700 border border-amber-200/60' :
+      cleanPrio === 'RESOLVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-slate-50 text-slate-600 border border-slate-200/60';
+
+    const label = statusLabelOf(q);
+    const statusClass = label === 'Answered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
+      label === 'On Hold' ? 'bg-purple-50 text-purple-700 border border-purple-200/60' : 'bg-amber-50 text-amber-700 border border-amber-200/60';
+    const followUpTag = q.isFollowUp ? '<span class="ml-1 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60 whitespace-nowrap">Follow-Up</span>' : '';
+    const internalTag = isAskedBySupport(q) ? internalBadgeHtml() : '';
+
+    tr.innerHTML =
+      '<td class="p-3"><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded whitespace-nowrap ' + prioClass + '">' + cleanPrio + '</span></td>' +
+      '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName || '—') + internalTag + '</td>' +
+      '<td class="p-3 text-slate-700 truncate">' + q.question + '</td>' +
+      '<td class="p-3 text-slate-700 font-medium truncate">' + esc(getUserDisplayName(q.askedBy)) + '</td>' +
+      '<td class="p-3 text-center">' + (q.caseLink ? '<a href="' + esc(q.caseLink) + '" target="_blank" class="text-blue-600 font-semibold underline hover:text-blue-800">Link</a>' : '—') + '</td>' +
+      '<td class="p-3 text-center"><span class="inline-block px-2.5 py-0.5 text-[10px] font-semibold rounded whitespace-nowrap ' + statusClass + '">' + label + '</span>' + followUpTag + '</td>' +
+      '<td class="p-3 text-right ' + (isAdmin ? '' : 'hidden') + '"><div class="flex justify-end gap-2">' +
+        '<button onclick="openEditModalByKey(\'' + esc(q.sheet) + '\', \'' + esc(q.ticketId) + '\')" class="text-blue-600 font-semibold underline text-[11px] hover:text-blue-800">Edit</button>' +
+        '<button onclick="deleteRecord(\'' + esc(q.sheet) + '\', \'' + esc(q.ticketId) + '\')" class="text-rose-600 font-semibold underline text-[11px] hover:text-rose-800">Delete</button>' +
+      '</div></td>';
+    body.appendChild(tr);
+  });
+}
+
+function openTicketDetail(sheet, ticketId) {
+  const q = allQuestions.find(r => r.sheet === sheet && r.ticketId === ticketId);
+  if (!q) return;
+
+  const isAnswered = q.sheet === 'Answered';
+  document.getElementById('tdmodal-event').innerText = q.eventName || '—';
+  document.getElementById('tdmodal-asked').innerText = getUserDisplayName(q.askedBy);
+  document.getElementById('tdmodal-question').innerHTML = q.question || '—';
+
+  const badge = document.getElementById('tdmodal-status-badge');
+  if (isAnswered) {
+    badge.innerText = 'Answered';
+    badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60';
+  } else if (q.status === 'Hold') {
+    badge.innerText = 'On Hold';
+    badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200/60';
+  } else {
+    badge.innerText = q.isFollowUp ? 'Open (Follow-Up)' : 'Open';
+    badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60';
+  }
+
+  document.getElementById('tdmodal-answer-section').classList.toggle('hidden', !isAnswered);
+  document.getElementById('tdmodal-unanswered-note').classList.toggle('hidden', isAnswered);
+  if (isAnswered) document.getElementById('tdmodal-answer').innerHTML = q.answer || '—';
+  document.getElementById('tdmodal-by').innerText = isAnswered ? getUserDisplayName(q.answeredBy) : '—';
+  document.getElementById('tdmodal-assigned').innerText = q.assignedTo ? getUserDisplayName(q.assignedTo) : '—';
+
+  const linkEl = document.getElementById('tdmodal-link');
+  if (q.caseLink) { linkEl.href = q.caseLink; linkEl.classList.remove('hidden'); }
+  else { linkEl.classList.add('hidden'); }
+
+  document.getElementById('ticket-detail-modal').classList.remove('hidden');
+}
+
+function closeTicketDetailModal() {
+  document.getElementById('ticket-detail-modal').classList.add('hidden');
+}
+
+// ============================================================================
+// ADMIN: EDIT / DELETE RECORDS
+// ============================================================================
+function openEditModalByKey(sheet, ticketId) {
+  const q = allQuestions.find(r => r.sheet === sheet && r.ticketId === ticketId);
+  if (q) openEditModal(q);
+}
+
+async function openEditModal(q) {
+  if (!isAdminUser(currentUser)) {
+    await customAlert('Only Admin accounts can edit or delete records.');
+    return;
+  }
+  activeEditRecord = q;
+  editSnapshot = { question: q.question || '', answer: q.answer || '' };
+
+  document.getElementById('edit-sheet').value = q.sheet;
+  document.getElementById('edit-ticket-id').value = q.ticketId;
+  document.getElementById('edit-event-name').value = q.eventName || '';
+  
+  // Render HTML formatted inside contenteditable editors
+  document.getElementById('edit-question').innerHTML = ensureExternalLinks(q.question || '');
+  document.getElementById('edit-answer').innerHTML = ensureExternalLinks(q.answer || '');
+  document.getElementById('edit-case-link').value = q.caseLink || '';
+
+  const isAnswered = q.sheet === 'Answered';
+  document.getElementById('edit-answer-row').classList.toggle('hidden', !isAnswered);
+  document.getElementById('edit-urgent-row').classList.toggle('hidden', isAnswered);
+  document.getElementById('edit-urgent').checked = normalizePriority(q.priority) === 'P1';
+
+  document.getElementById('admin-edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  activeEditRecord = null;
+  editSnapshot = null;
+  document.getElementById('admin-edit-modal').classList.add('hidden');
+}
+
+async function submitEditModal() {
+  if (!activeEditRecord || !isAdminUser(currentUser)) return;
+
+  const eventNameInput = document.getElementById('edit-event-name');
+  if (!isValidEventName(eventNameInput.value)) {
+    await customAlert(EVENT_NAME_INVALID_MSG);
+    eventNameInput.focus();
+    return;
+  }
+
+  const sheet = document.getElementById('edit-sheet').value;
+  const ticketId = document.getElementById('edit-ticket-id').value;
+  const isAnswered = sheet === 'Answered';
+
+  const updates = {
+    eventName: document.getElementById('edit-event-name').value,
+    question: ensureExternalLinks(document.getElementById('edit-question').innerHTML),
+    caseLink: document.getElementById('edit-case-link').value,
+    expected: editSnapshot || {}
+  };
+  if (isAnswered) {
+    updates.answer = ensureExternalLinks(document.getElementById('edit-answer').innerHTML);
+  } else {
+    updates.isUrgent = document.getElementById('edit-urgent').checked;
+  }
+
+  const fnName = isAnswered ? 'updateAnswer' : 'updateQuestion';
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not save changes: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    closeEditModal();
+    refreshData();
+    showToast('Record updated successfully!');
+  })[fnName](ticketId, updates, currentUser.email);
+}
+
+function submitDeleteFromEditModal() {
+  if (!activeEditRecord) return;
+  deleteRecord(activeEditRecord.sheet, activeEditRecord.ticketId);
+}
+
+async function deleteRecord(sheet, ticketId) {
+  if (!isAdminUser(currentUser)) {
+    await customAlert('Only Admin accounts can delete records.');
+    return;
+  }
+  const confirmed = await customConfirm('Delete this record? It will be moved to "Deleted Records".', { okLabel: 'Delete', danger: true });
+  if (!confirmed) return;
+
+  const fnName = sheet === 'Answered' ? 'deleteAnswer' : 'deleteQuestion';
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not delete: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    closeEditModal();
+    refreshData();
+    showToast('Record deleted.');
+  })[fnName](ticketId, currentUser.email);
+}
+
+// ============================================================================
+// TAB 4: SUPERVISOR DESK
+// ============================================================================
+function supportRoster() {
+  return teamMembers.filter(m => isSupportUser(m));
+}
+
+function populateFilterDropdowns() {
+  // Supervisor filters
+  const askedSel = document.getElementById('sup-filter-askedby');
+  const assigneeSel = document.getElementById('sup-filter-assignee');
+  const bulkSel = document.getElementById('sup-bulk-assignee');
+
+  // Answered Tab filters
+  const ansAskedSel = document.getElementById('answered-askedby-filter');
+  const ansBySel = document.getElementById('answered-by-filter');
+
+  if (askedSel) {
+    askedSel.innerHTML = '<option value="">Asked by: anyone</option>';
+    teamMembers.filter(m => String(m.status).toLowerCase() === 'active').forEach(m => {
+      askedSel.innerHTML += '<option value="' + esc(m.email) + '">' + esc(m.name) + '</option>';
+    });
+  }
+
+  if (assigneeSel && bulkSel) {
+    assigneeSel.innerHTML = '<option value="">Assigned to: anyone</option><option value="__none__">Unassigned only</option>';
+    bulkSel.innerHTML = '<option value="">-- Assign selected to --</option>';
+    supportRoster().forEach(m => {
+      const label = (currentUser && m.email === currentUser.email) ? m.name + ' (Me)' : m.name;
+      assigneeSel.innerHTML += '<option value="' + esc(m.email) + '">' + esc(label) + '</option>';
+      bulkSel.innerHTML += '<option value="' + esc(m.email) + '">' + esc(label) + '</option>';
+    });
+  }
+
+  if (ansAskedSel) {
+    ansAskedSel.innerHTML = '<option value="">Asked by: anyone</option>';
+    teamMembers.filter(m => String(m.status).toLowerCase() === 'active').forEach(m => {
+      ansAskedSel.innerHTML += '<option value="' + esc(m.email) + '">' + esc(m.name) + '</option>';
+    });
+  }
+
+  if (ansBySel) {
+    ansBySel.innerHTML = '<option value="">Answered by: anyone</option>';
+    supportRoster().forEach(m => {
+      ansBySel.innerHTML += '<option value="' + esc(m.name) + '">' + esc(m.name) + '</option>';
+    });
+  }
+}
+
+function setSupScope(scope) {
+  supScope = scope;
+  ['all', 'mine-all', 'mine-active', 'unassigned'].forEach(s => {
+    const btn = document.getElementById('sup-scope-' + s);
+    if (!btn) return;
+    const active = s === scope;
+    btn.className = 'px-3 py-1.5 ' + (active ? 'bg-slate-900 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-slate-50 font-normal');
+  });
+  renderSupervisorDesk();
+}
+
+function toggleSupChip(chip) {
+  supChips[chip] = !supChips[chip];
+  refreshSupChipStyles();
+  renderSupervisorDesk();
+}
+
+function refreshSupChipStyles() {
+  const styles = {
+    p1: ['bg-rose-600 text-white border-rose-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50'],
+    hold: ['bg-purple-600 text-white border-purple-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50'],
+    followup: ['bg-indigo-600 text-white border-indigo-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50']
+  };
+  Object.keys(styles).forEach(chip => {
+    const btn = document.getElementById('sup-chip-' + chip);
+    if (!btn) return;
+    btn.className = 'px-2.5 py-1.5 rounded-lg text-[11px] border transition ' + (supChips[chip] ? styles[chip][0] : styles[chip][1]);
+  });
+}
+
+function supKpiClick(kind) {
+  supChips = { p1: false, hold: false, followup: false };
+  if (kind === 'p1') { supScope = 'all'; supChips.p1 = true; }
+  else if (kind === 'hold') { supScope = 'all'; supChips.hold = true; }
+  else if (kind === 'followup') { supScope = 'all'; supChips.followup = true; }
+  else if (kind === 'mine-active') { supScope = 'mine-active'; }
+  else if (kind === 'unassigned') { supScope = 'unassigned'; }
+  refreshSupChipStyles();
+  setSupScope(supScope);
+}
+
+function toggleSupMore() {
+  const panel = document.getElementById('sup-more-panel');
+  const showing = panel.classList.toggle('hidden');
+  document.getElementById('sup-more-btn').innerText = showing ? 'More filters' : 'Hide filters';
+}
+
+function clearSupFilters() {
+  supScope = 'all';
+  supChips = { p1: false, hold: false, followup: false };
+  document.getElementById('sup-search').value = '';
+  document.getElementById('sup-filter-askedby').value = '';
+  document.getElementById('sup-filter-assignee').value = '';
+  document.getElementById('sup-filter-date').value = '';
+  refreshSupChipStyles();
+  setSupScope('all');
+}
+
+function renderSupervisorDesk() {
+  const container = document.getElementById('sup-groups');
+  if (!container || !currentUser) return;
+
+  const open = allQuestions.filter(q => q.sheet === 'Questions Tracker');
+  const me = (currentUser.email || '').toLowerCase();
+
+  // Top KPI Numbers
+  document.getElementById('sup-kpi-p1').innerText = open.filter(q => normalizePriority(q.priority) === 'P1' && q.status !== 'Hold').length;
+  document.getElementById('sup-kpi-unassigned').innerText = open.filter(q => !q.assignedTo && q.status !== 'Hold').length;
+  document.getElementById('sup-kpi-mine').innerText = open.filter(q => q.assignedTo === me && q.status !== 'Hold').length;
+  document.getElementById('sup-kpi-hold').innerText = open.filter(q => q.status === 'Hold').length;
+  document.getElementById('sup-kpi-followup').innerText = open.filter(q => q.isFollowUp).length;
+
+  // Workload Metrics Strip
+  const workloadContainer = document.getElementById('sup-workload-pills');
+  if (workloadContainer) {
+    const counts = {};
+    let unassignedCount = 0;
+    supportRoster().forEach(m => { counts[m.email.toLowerCase()] = { name: m.name, count: 0 }; });
+
+    open.forEach(q => {
+      if (q.status !== 'Hold') {
+        const assigned = (q.assignedTo || '').toLowerCase();
+        if (assigned && counts[assigned]) {
+          counts[assigned].count += 1;
+        } else if (!assigned) {
+          unassignedCount += 1;
+        }
+      }
+    });
+
+    let pillsHtml = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Unassigned: ' + unassignedCount + '</span>';
+    Object.values(counts).forEach(c => {
+      pillsHtml += '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">' + esc(c.name) + ': ' + c.count + '</span>';
+    });
+    workloadContainer.innerHTML = pillsHtml;
+  }
+
+  const search = (document.getElementById('sup-search').value || '').toLowerCase();
+  const fAsked = document.getElementById('sup-filter-askedby').value;
+  const fAssignee = document.getElementById('sup-filter-assignee').value;
+  const fDate = document.getElementById('sup-filter-date').value;
+
+  const filtered = open.filter(q => {
+    if (supScope === 'mine-all' && q.assignedTo !== me) return false;
+    if (supScope === 'mine-active' && (q.assignedTo !== me || q.status === 'Hold')) return false;
+    if (supScope === 'unassigned' && q.assignedTo) return false;
+    if (supChips.p1 && (normalizePriority(q.priority) !== 'P1' || q.status === 'Hold')) return false;
+    if (supChips.hold && q.status !== 'Hold') return false;
+    if (supChips.followup && !q.isFollowUp) return false;
+    if (search && !(q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search) || getUserDisplayName(q.askedBy).toLowerCase().includes(search))) return false;
+    if (fAsked && (q.askedByEmail || '') !== fAsked) return false;
+    if (fAssignee === '__none__' && q.assignedTo) return false;
+    if (fAssignee && fAssignee !== '__none__' && q.assignedTo !== fAssignee) return false;
+    if (fDate && cstDateString(q.created) !== fDate) return false;
+    return true;
+  });
+
+  const visibleIds = new Set(filtered.map(q => q.ticketId));
+  supSelected.forEach(id => { if (!visibleIds.has(id)) supSelected.delete(id); });
+  updateBulkBar();
+
+  // Grouping Logic
+  const groups = { p1: [], unassigned: [], mine: [], hold: [], others: [] };
+  filtered.forEach(q => {
+    if (q.status === 'Hold') groups.hold.push(q);
+    else if (normalizePriority(q.priority) === 'P1') groups.p1.push(q);
+    else if (!q.assignedTo) groups.unassigned.push(q);
+    else if (q.assignedTo === me) groups.mine.push(q);
+    else groups.others.push(q);
+  });
+
+  const byWait = (a, b) => (parseFloat(b.hoursElapsed) || 0) - (parseFloat(a.hoursElapsed) || 0);
+  Object.keys(groups).forEach(k => groups[k].sort(byWait));
+
+  const sections = [
+    { key: 'p1', title: 'Needs Attention Now (P1)', accent: 'text-rose-700', dot: 'bg-rose-500' },
+    { key: 'unassigned', title: 'Unassigned Queue', accent: 'text-amber-700', dot: 'bg-amber-500' },
+    { key: 'mine', title: 'Assigned to Me', accent: 'text-emerald-700', dot: 'bg-emerald-500' },
+    { key: 'hold', title: 'On Hold', accent: 'text-purple-700', dot: 'bg-purple-500' },
+    { key: 'others', title: 'Assigned to Others', accent: 'text-slate-600', dot: 'bg-slate-400' }
+  ];
+
+  container.innerHTML = '';
+  let total = 0;
+
+  sections.forEach(sec => {
+    const list = groups[sec.key];
+    if (!list.length) return;
+    total += list.length;
+
+    const secEl = document.createElement('div');
+    secEl.className = 'bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden';
+    
+    let html = 
+      '<div class="flex items-center gap-2 p-3 bg-slate-50/60 border-b border-slate-100">' +
+        '<span class="w-2 h-2 rounded-full ' + sec.dot + '"></span>' +
+        '<h3 class="text-[11px] font-bold uppercase tracking-wider ' + sec.accent + '">' + sec.title + '</h3>' +
+        '<span class="text-[11px] font-semibold text-slate-400">(' + list.length + ')</span>' +
+      '</div>' +
+      '<div class="overflow-x-auto">' +
+        '<table class="table-fixed-layout text-left text-xs">' +
+          '<thead>' +
+            '<tr class="text-slate-400 font-bold border-b border-slate-100 text-[10px] uppercase tracking-wider bg-slate-50/30">' +
+              '<th class="p-3 w-8 text-center"></th>' +
+              '<th class="p-3 w-24">STATUS</th>' +
+              '<th class="p-3 w-40">EVENT</th>' +
+              '<th class="p-3">QUESTION PREVIEW (CLICK TO ANSWER)</th>' +
+              '<th class="p-3 w-36">ASKED / ASSIGNED</th>' +
+              '<th class="p-3 w-28 text-center">WAITING</th>' +
+              '<th class="p-3 w-44 text-right">ACTION</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody class="divide-y divide-slate-100">';
+
+    list.forEach(q => {
+      const prio = normalizePriority(q.priority);
+      const onHold = q.status === 'Hold';
+      const isMine = q.assignedTo === me;
+
+      let statusBadgeHtml = '';
+      if (onHold) {
+        statusBadgeHtml = '<button onclick="event.stopPropagation(); showHoldReasonAlert(\'' + esc(q.holdReason) + '\')" class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 hover:bg-purple-100/80 transition" title="Click to view full reason">On Hold ℹ️</button>';
+      } else if (prio === 'P1') {
+        statusBadgeHtml = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-50 text-rose-700 border border-rose-200/60">P1 Urgent</span>';
+      } else {
+        statusBadgeHtml = '<span class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>';
+      }
+
+      const followTag = q.isFollowUp ? ' <span class="px-1.5 py-0.5 text-[9px] font-medium rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60">Follow-Up</span>' : '';
+      const mineBadge = isMine ? ' <span class="px-1.5 py-0.5 text-[9px] font-medium rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">Mine</span>' : '';
+      const internalTag = isAskedBySupport(q) ? internalBadgeHtml() : '';
+      const checked = supSelected.has(q.ticketId) ? ' checked' : '';
+
+      html +=
+        '<tr class="sup-row cursor-pointer ' + (isMine ? 'bg-emerald-50/15' : '') + '" onclick="if(!event.target.closest(\'button\') && !event.target.closest(\'input\') && !event.target.closest(\'a\')) openAnswerModal(\'' + esc(q.ticketId) + '\')">' +
+          '<td class="p-3.5 text-center" onclick="event.stopPropagation()">' +
+            '<input type="checkbox" class="w-3.5 h-3.5 accent-slate-800 rounded border-slate-300" onchange="toggleSupSelect(\'' + esc(q.ticketId) + '\', this.checked)"' + checked + '>' +
+          '</td>' +
+          '<td class="p-3.5"><div class="flex items-center">' + statusBadgeHtml + '</div></td>' +
+          '<td class="p-3.5 font-semibold text-slate-800 truncate">' + esc(q.eventName || '—') + followTag + mineBadge + internalTag + '</td>' +
+          '<td class="p-3.5"><div class="text-slate-800 font-medium truncate hover:text-emerald-700 transition">' + q.question + '</div>' + (q.caseLink ? '<a href="' + esc(q.caseLink) + '" target="_blank" onclick="event.stopPropagation()" class="text-[11px] text-blue-600 underline font-normal hover:text-blue-800">Open Link</a>' : '') + '</td>' +
+          '<td class="p-3.5 text-slate-600 text-[11px]"><div class="font-semibold text-slate-800 truncate">' + esc(getUserDisplayName(q.askedBy)) + '</div><div class="text-slate-400 truncate text-[10px]">' + (q.assignedTo ? '→ ' + esc(getUserDisplayName(q.assignedTo)) : 'Unassigned') + '</div></td>' +
+          '<td class="p-3.5 text-center"><span class="' + waitColorClass(q.hoursElapsed) + '">' + esc(q.hoursElapsed) + ' hrs</span></td>' +
+          '<td class="p-3.5 text-right" onclick="event.stopPropagation()">' +
+            '<div class="flex items-center justify-end gap-2">' +
+              '<button onclick="openAnswerModal(\'' + esc(q.ticketId) + '\')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-sm transition">Answer</button>' +
+              (!isMine ? '<button onclick="assignToMe(\'' + esc(q.ticketId) + '\')" class="text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 py-1 rounded-md text-[10px] font-medium transition">Assign</button>' : '<button onclick="unassignTicket(\'' + esc(q.ticketId) + '\')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-2 py-1 rounded-md text-[10px] transition">Unassign</button>') +
+              (onHold
+                ? '<button onclick="resumeTicket(\'' + esc(q.ticketId) + '\')" class="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md text-[11px] font-medium transition">Resume</button>'
+                : '<button onclick="holdTicket(\'' + esc(q.ticketId) + '\')" class="text-purple-600 hover:bg-purple-50 px-2 py-1 rounded-md text-[11px] font-medium transition">Hold</button>') +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    secEl.innerHTML = html;
+    container.appendChild(secEl);
+  });
+
+  if (total === 0) {
+    container.innerHTML = '<div class="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No open tickets match the current filters. 🎉</div>';
+  }
+}
+
+function assignToMe(ticketId) {
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not assign: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshData();
+    showToast('Assigned to you.');
+  }).assignQuestion(ticketId, currentUser.email, currentUser.email);
+}
+
+function unassignTicket(ticketId) {
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not unassign: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshData();
+    showToast('Ticket returned to the shared queue.');
+  }).unassignQuestion(ticketId, currentUser.email);
+}
+
+async function holdTicket(ticketId) {
+  const reason = await customPrompt('Why is this ticket going on hold?', { placeholder: 'e.g. Waiting on client reply...' });
+  if (reason === null) return;
+  if (!reason.trim()) { await customAlert('A hold reason is required.'); return; }
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not hold: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshData();
+    showToast('Ticket placed on hold.');
+  }).holdQuestion(ticketId, reason.trim(), currentUser.email);
+}
+
+async function resumeTicket(ticketId) {
+  const confirmed = await customConfirm('Resume this ticket from hold?', { okLabel: 'Resume' });
+  if (!confirmed) return;
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not resume: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshData();
+    showToast('Ticket resumed.');
+  }).resumeQuestion(ticketId, currentUser.email);
+}
+
+function toggleSupSelect(ticketId, checked) {
+  if (checked) supSelected.add(ticketId);
+  else supSelected.delete(ticketId);
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('sup-bulk-bar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', supSelected.size === 0);
+  bar.classList.toggle('flex', supSelected.size > 0);
+  document.getElementById('sup-bulk-count').innerText = supSelected.size;
+}
+
+function clearSupSelection() {
+  supSelected.clear();
+  renderSupervisorDesk();
+}
+
+async function submitBulkAssign() {
+  const assignee = document.getElementById('sup-bulk-assignee').value;
+  if (!assignee) { await customAlert('Choose who to assign the selected tickets to.'); return; }
+  const ids = Array.from(supSelected);
+  google.script.run.withFailureHandler(err => {
+    showToast('Bulk assign failed: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(res => {
+    supSelected.clear();
+    refreshData();
+    showToast('Assigned ' + (res && res.updated != null ? res.updated : ids.length) + ' ticket(s).');
+  }).assignQuestionsBulk(ids, assignee, currentUser.email);
+}
+
+function openAnswerModal(ticketId) {
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (!q) { showToast('This ticket is no longer open. Refreshing...'); refreshData(); return; }
+  activeModalTicketId = ticketId;
+
+  document.getElementById('amodal-event').innerText = q.eventName || '—';
+  document.getElementById('amodal-asked').innerText = getUserDisplayName(q.askedBy);
+  document.getElementById('amodal-meta').innerText = 'waiting ' + q.hoursElapsed + ' hrs · ' + normalizePriority(q.priority);
+  document.getElementById('modal-question-text').innerHTML = q.question || '—';
+  
+  const modalEditor = document.getElementById('modal-answer-input');
+  modalEditor.innerHTML = '';
+  document.getElementById('modal-inp-assigned-email').value = '';
+
+  const linkC = document.getElementById('modal-link-container');
+  const linkEl = document.getElementById('modal-case-link');
+  if (q.caseLink) { linkEl.href = q.caseLink; linkEl.innerText = q.caseLink; linkC.classList.remove('hidden'); }
+  else { linkC.classList.add('hidden'); }
+
+  const onHold = q.status === 'Hold';
+  document.getElementById('modal-hold-banner').classList.toggle('hidden', !onHold);
+  document.getElementById('modal-hold-reason').innerText = q.holdReason || '';
+  document.getElementById('modal-hold-btn').classList.toggle('hidden', onHold);
+  document.getElementById('modal-resume-btn').classList.toggle('hidden', !onHold);
+
+  populateAssigneeDropdown();
+  document.getElementById('answer-modal').classList.remove('hidden');
+}
+
+function closeAnswerModal() {
+  activeModalTicketId = null;
+  document.getElementById('answer-modal').classList.add('hidden');
+}
+
+async function submitModalAnswer() {
+  if (!activeModalTicketId) return;
+  const editorEl = document.getElementById('modal-answer-input');
+  const ansHtml = editorEl.innerHTML.trim();
+  const ansText = editorEl.innerText.trim();
+
+  if (!ansText) { await customAlert('Please write an answer before submitting.'); return; }
+
+  let reassignEmail = document.getElementById('modal-inp-assigned-email').value;
+  if (!reassignEmail) {
+    const detectedMember = parseMentionedUser(ansHtml);
+    if (detectedMember) reassignEmail = detectedMember.email;
+  }
+
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not submit answer: ' + (err && err.message ? err.message : err));
+    refreshData();
+  }).withSuccessHandler(() => {
+    if (reassignEmail) {
+      google.script.run.assignQuestion(activeModalTicketId, reassignEmail, currentUser.email);
+    }
+    closeAnswerModal();
+    refreshData();
+    showToast('Answer submitted successfully!');
+  }).answerQuestion(activeModalTicketId, ansHtml, currentUser.email, currentUser.name);
+}
+
+async function putOnHold() {
+  if (!activeModalTicketId) return;
+  const id = activeModalTicketId;
+  closeAnswerModal();
+  await holdTicket(id);
+}
+
+async function resumeFromHold() {
+  if (!activeModalTicketId) return;
+  const id = activeModalTicketId;
+  closeAnswerModal();
+  await resumeTicket(id);
+}
+
+function populateAssigneeDropdown() {
+  const select = document.getElementById('modal-assignee-select');
+  if (!select) return;
+  const isSupport = isSupportUser(currentUser);
+  select.innerHTML = '<option value="">-- Choose supervisor --</option>';
+  supportRoster().forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.email;
+    opt.innerText = (currentUser && m.email === currentUser.email) ? m.name + ' (Me)' : m.name;
+    select.appendChild(opt);
+  });
+  const assignRow = document.getElementById('modal-assign-row');
+  if (assignRow) assignRow.classList.toggle('hidden', !isSupport);
+}
+
+async function submitModalAssign() {
+  if (!isSupportUser(currentUser)) {
+    await customAlert('Only Support and Supervisor roles are authorized to assign questions.');
+    return;
+  }
+  const assigneeEmail = document.getElementById('modal-assignee-select').value;
+  if (!assigneeEmail) {
+    await customAlert('Please choose a supervisor to assign this question to.');
+    return;
+  }
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not assign: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    closeAnswerModal();
+    refreshData();
+    showToast('Question assigned successfully!');
+  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email);
+}
+
+// ============================================================================
+// TAB 5: REPORTING
+// ============================================================================
+function handleReportRangeChange() {
+  const preset = document.getElementById('report-range-preset').value;
+  const customEl = document.getElementById('report-custom-range');
+  const showCustom = preset === 'CUSTOM';
+  customEl.classList.toggle('hidden', !showCustom);
+  customEl.classList.toggle('flex', showCustom);
+  renderReporting();
+}
+
+function getReportDateRange() {
+  const presetEl = document.getElementById('report-range-preset');
+  const preset = presetEl ? presetEl.value : 'ALL';
+  const now = new Date();
+
+  if (preset === 'ALL') return null;
+  if (preset === 'TODAY') return { start: cstDayBoundary(now, false), end: cstDayBoundary(now, true) };
+  if (preset === 'YESTERDAY') {
+    const y = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    return { start: cstDayBoundary(y, false), end: cstDayBoundary(y, true) };
+  }
+  if (preset === 'THIS_WEEK') {
+    const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: APP_TIMEZONE, weekday: 'short' }).format(now);
+    const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dow = dowMap[weekdayStr] !== undefined ? dowMap[weekdayStr] : 0;
+    const startDate = new Date(now.getTime() - dow * 24 * 60 * 60 * 1000);
+    return { start: cstDayBoundary(startDate, false), end: cstDayBoundary(now, true) };
+  }
+  if (preset === 'THIS_MONTH') {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit' }).formatToParts(now);
+    const y = parts.find(p => p.type === 'year').value;
+    const m = parts.find(p => p.type === 'month').value;
+    const firstOfMonth = new Date(y + '-' + m + '-01T12:00:00');
+    return { start: cstDayBoundary(firstOfMonth, false), end: cstDayBoundary(now, true) };
+  }
+  if (preset === 'THIS_YEAR') {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric' }).formatToParts(now);
+    const y = parts.find(p => p.type === 'year').value;
+    const firstOfYear = new Date(y + '-01-01T12:00:00');
+    return { start: cstDayBoundary(firstOfYear, false), end: cstDayBoundary(now, true) };
+  }
+  if (preset === 'CUSTOM') {
+    const startVal = document.getElementById('report-start-date').value;
+    const endVal = document.getElementById('report-end-date').value;
+    if (!startVal && !endVal) return null;
+    const start = startVal ? cstDayBoundary(new Date(startVal + 'T12:00:00'), false) : new Date(0);
+    const end = endVal ? cstDayBoundary(new Date(endVal + 'T12:00:00'), true) : cstDayBoundary(now, true);
+    return { start: start, end: end };
+  }
+  return null;
+}
+
+function inDateRange(isoStr, range) {
+  if (!range) return true;
+  if (!isoStr) return false;
+  const t = new Date(isoStr).getTime();
+  return t >= range.start.getTime() && t <= range.end.getTime();
+}
+
+function renderReporting() {
+  const range = getReportDateRange();
+  const unanswered = allQuestions.filter(q => q.sheet === 'Questions Tracker' && inDateRange(q.created, range));
+  const answered = allQuestions.filter(q => q.sheet === 'Answered' && inDateRange(q.answeredDate, range));
+  const statU = document.getElementById('stat-unanswered');
+  const statA = document.getElementById('stat-answered');
+  if (statU) statU.innerText = unanswered.length;
+  if (statA) statA.innerText = answered.length;
+  renderReportBreakdown(answered);
+  filterReport(currentReportType);
+}
+
+function sortReportBreakdown(col) {
+  if (reportBreakdownSort.col === col) {
+    reportBreakdownSort.dir = reportBreakdownSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    reportBreakdownSort.col = col;
+    reportBreakdownSort.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  renderReporting();
+}
+
+function refreshReportBreakdownArrows() {
+  ['name', 'count', 'avgHours'].forEach(col => {
+    const el = document.getElementById('sort-arrow-reportBreakdown-' + col);
+    if (!el) return;
+    el.textContent = (reportBreakdownSort.col === col) ? (reportBreakdownSort.dir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+  });
+}
+
+function renderReportBreakdown(answeredRecords) {
+  const body = document.getElementById('report-breakdown-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const validSupportEmails = new Set(supportRoster().map(m => m.email.toLowerCase()));
+  const validSupportNames = new Set(supportRoster().map(m => m.name.toLowerCase()));
+
+  const agg = {};
+  answeredRecords.forEach(r => {
+    const rawLabel = getUserDisplayName(r.answeredBy) || 'Unknown';
+    const cleanLabel = rawLabel.trim();
+    const cleanLower = cleanLabel.toLowerCase();
+
+    // Filter out generic roles, test users, or invalid names
+    if (cleanLower === 'supervisor' || cleanLower.includes('admin user') || cleanLower.includes('mbhasin@') || (!validSupportNames.has(cleanLower) && !validSupportEmails.has(cleanLower))) {
+      return; // Skip invalid or test accounts
+    }
+
+    if (!agg[cleanLabel]) agg[cleanLabel] = { name: cleanLabel, count: 0, totalHours: 0 };
+    agg[cleanLabel].count += 1;
+    agg[cleanLabel].totalHours += parseFloat(r.turnaroundHours) || 0;
+  });
+
+  let rows = Object.values(agg).map(a => ({
+    name: a.name,
+    count: a.count,
+    avgHours: a.count > 0 ? (a.totalHours / a.count) : 0
+  }));
+
+  const totalAnswered = rows.reduce((sum, r) => sum + r.count, 0);
+  const numSupervisors = rows.length;
+  const avgPerSupervisor = numSupervisors > 0 ? (totalAnswered / numSupervisors) : 0;
+  const statAvg = document.getElementById('stat-avg-per-supervisor');
+  if (statAvg) statAvg.innerText = avgPerSupervisor.toFixed(1);
+
+  const s = reportBreakdownSort;
+  rows.sort((a, b) => {
+    if (s.col === 'name') {
+      return s.dir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+    }
+    const av = a[s.col], bv = b[s.col];
+    return s.dir === 'asc' ? av - bv : bv - av;
+  });
+
+  refreshReportBreakdownArrows();
+
+  if (rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">No answered tickets in this range.</td></tr>';
+    return;
+  }
+
+  rows.forEach(r => {
+    const share = totalAnswered > 0 ? Math.round((r.count / totalAnswered) * 100) : 0;
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    tr.innerHTML =
+      '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(r.name) + '</td>' +
+      '<td class="p-3 text-center font-mono">' + r.count + '</td>' +
+      '<td class="p-3 text-center font-mono">' + r.avgHours.toFixed(1) + '</td>' +
+      '<td class="p-3"><div class="flex items-center gap-2">' +
+        '<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-emerald-500" style="width:' + share + '%"></div></div>' +
+        '<span class="text-[10px] text-slate-500 font-mono w-8 text-right">' + share + '%</span>' +
+      '</div></td>';
+    body.appendChild(tr);
+  });
+
+  const totalHoursAll = rows.reduce((sum, r) => sum + (r.avgHours * r.count), 0);
+  const teamAvgHours = totalAnswered > 0 ? (totalHoursAll / totalAnswered) : 0;
+  const summaryRow = document.createElement('tr');
+  summaryRow.className = 'bg-slate-50 font-bold border-t-2 border-slate-200';
+  summaryRow.innerHTML =
+    '<td class="p-3 text-slate-800">Team Total</td>' +
+    '<td class="p-3 text-center font-mono">' + totalAnswered + '</td>' +
+    '<td class="p-3 text-center font-mono">' + teamAvgHours.toFixed(1) + '</td>' +
+    '<td class="p-3 text-center text-slate-400">100%</td>';
+  body.appendChild(summaryRow);
+}
+
+function filterReport(type) {
+  currentReportType = type;
+  const range = getReportDateRange();
+  const body = document.getElementById('report-table-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const records = type === 'unanswered'
+    ? allQuestions.filter(q => q.sheet === 'Questions Tracker' && inDateRange(q.created, range))
+    : allQuestions.filter(q => q.sheet === 'Answered' && inDateRange(q.answeredDate, range));
+  const title = document.getElementById('report-detail-title');
+  if (title) title.innerText = type === 'unanswered' ? 'Unanswered Questions Queue' : 'Answered Questions Log (turnaround excludes hold time)';
+
+  if (records.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Nothing in this range.</td></tr>';
+    return;
+  }
+
+  records.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    const statusLabel = r.status === 'Hold' ? 'Hold' + (r.holdReason ? ' — ' + r.holdReason : '') : r.status;
+    tr.innerHTML =
+      '<td class="p-3 truncate">' + r.question + '</td>' +
+      '<td class="p-3 truncate font-medium">' + esc(getUserDisplayName(r.askedBy)) + '</td>' +
+      '<td class="p-3 truncate font-medium">' + esc(getUserDisplayName(r.answeredBy || r.assignedTo)) + '</td>' +
+      '<td class="p-3 text-center font-semibold">' + esc(statusLabel) + '</td>';
+    body.appendChild(tr);
+  });
+}
+
+// ============================================================================
+// TAB 6: TEAM SETUP
+// ============================================================================
+function renderTeamTable() {
+  const body = document.getElementById('team-table-body');
+  if (!body) return;
+  body.innerHTML = '';
+  teamMembers.forEach(m => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    tr.innerHTML =
+      '<td class="p-3 font-semibold text-slate-800">' + esc(m.name) + '</td>' +
+      '<td class="p-3 text-slate-600">' + esc(m.title) + '</td>' +
+      '<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase ' + (m.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-slate-100 text-slate-500 border border-slate-200/60') + '">' + esc(m.status) + '</span></td>' +
+      '<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold ' + (m.category === 'Admin' ? 'bg-purple-50 text-purple-700 border border-purple-200/60' : m.category === 'Support' ? 'bg-amber-50 text-amber-700 border border-amber-200/60' : 'bg-blue-50 text-blue-700 border border-blue-200/60') + '">' + esc(m.category) + '</span></td>' +
+      '<td class="p-3 font-mono text-slate-500 truncate">' + esc(m.email) + '</td>' +
+      '<td class="p-3 text-right space-x-2">' +
+        '<button onclick="editTeam(\'' + esc(m.email) + '\')" class="text-blue-600 font-semibold underline text-xs">Edit</button>' +
+        '<button onclick="deleteTeam(\'' + esc(m.email) + '\')" class="text-rose-600 font-semibold underline text-xs">Delete</button>' +
+      '</td>';
+    body.appendChild(tr);
+  });
+}
+
+function toggleTeamPasswordField() {
+  const isAdminCategory = document.getElementById('team-category').value === 'Admin';
+  document.getElementById('team-password-row').classList.toggle('hidden', !isAdminCategory);
+}
+
+function resetTeamForm() {
+  document.getElementById('team-form').reset();
+  document.getElementById('team-original-email').value = '';
+  toggleTeamPasswordField();
+}
+
+function handleTeamSubmit(e) {
+  e.preventDefault();
+  const member = {
+    originalEmail: document.getElementById('team-original-email').value || null,
+    name: document.getElementById('team-name').value,
+    title: document.getElementById('team-title').value,
+    status: document.getElementById('team-status').value,
+    category: document.getElementById('team-category').value,
+    email: document.getElementById('team-email').value,
+    password: document.getElementById('team-password').value || null
+  };
+
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not save: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    resetTeamForm();
+    refreshData();
+    showToast('Team roster updated.');
+  }).saveTeamMember(member, currentUser.email);
+}
+
+function editTeam(email) {
+  const m = teamMembers.find(item => item.email === email);
+  if (!m) return;
+  document.getElementById('team-original-email').value = m.email;
+  document.getElementById('team-name').value = m.name;
+  document.getElementById('team-title').value = m.title;
+  document.getElementById('team-status').value = m.status;
+  document.getElementById('team-category').value = m.category;
+  document.getElementById('team-email').value = m.email;
+  document.getElementById('team-password').value = '';
+  toggleTeamPasswordField();
+}
+
+async function deleteTeam(email) {
+  const confirmed = await customConfirm('Delete this team member?', { okLabel: 'Delete', danger: true });
+  if (confirmed) {
+    google.script.run.withFailureHandler(err => {
+      showToast('Could not delete: ' + (err && err.message ? err.message : err));
+    }).withSuccessHandler(() => {
+      refreshData();
+      showToast('Member deleted.');
+    }).deleteTeamMember(email, currentUser.email);
+  }
+}
+
+// ============================================================================
+// TOAST
+// ============================================================================
+function showToast(msg) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl text-xs flex justify-between items-center gap-4 border-l-4 border-emerald-500';
+  const span = document.createElement('span');
+  span.innerText = msg;
+  const btn = document.createElement('button');
+  btn.className = 'text-slate-400 hover:text-white font-bold';
+  btn.innerText = '✕';
+  btn.onclick = () => toast.remove();
+  toast.appendChild(span);
+  toast.appendChild(btn);
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// Automatically attaches target="_blank" to any <a> tag in HTML content
+function ensureExternalLinks(html) {
+  if (!html) return '';
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  temp.querySelectorAll('a').forEach(a => {
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener noreferrer');
+  });
+  return temp.innerHTML;
+}
+
+// Global click delegation to force any clicked link out of the iframe
+document.addEventListener('click', function(e) {
+  const link = e.target.closest('a');
+  if (link && link.href && link.href !== '#') {
+    e.preventDefault();
+    window.open(link.href, '_blank', 'noopener,noreferrer');
+  }
+});
+
+</script>
+</body>
+</html>
