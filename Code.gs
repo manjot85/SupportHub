@@ -425,6 +425,26 @@ function formatCSTStamp(date) {
   return Utilities.formatDate(date || new Date(), APP_TIMEZONE, "MMM d, h:mm a");
 }
 
+// Short form of a person's name for the notes log, e.g. "John Smith" -> "JS".
+function initialsOf(name) {
+  return String(name || '').trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(function (w) { return w.charAt(0).toUpperCase(); })
+    .join('');
+}
+
+// Compact, single-line note entry appended to the question log:
+//   [MM/DD HH:MM · JS]: note text
+// Kept deliberately short (initials + compact CST timestamp, no "Update" text)
+// so the log stays scannable. Whitespace is collapsed to one line.
+function buildNoteEntry(note, actorName) {
+  var stamp = Utilities.formatDate(new Date(), APP_TIMEZONE, "MM/dd HH:mm");
+  var clean = String(note || '').replace(/\s+/g, ' ').trim();
+  return "[" + stamp + " · " + initialsOf(actorName) + "]: " + clean;
+}
+
 // ==========================================
 // VALIDATION HELPERS (server-side, always enforced)
 // ==========================================
@@ -851,8 +871,7 @@ function addQuestionUpdate(ticketId, updateText, requestingEmail) {
       throw new Error("Access denied: you can only add updates to your own tickets.");
     }
 
-    const stamp = formatCSTStamp(new Date());
-    const newQuestion = String(current[Q_COL.QUESTION - 1] || '') + "\n\n[Update " + stamp + " CST by " + member.name + "]: " + text;
+    const newQuestion = String(current[Q_COL.QUESTION - 1] || '') + "\n\n" + buildNoteEntry(text, member.name);
     sheet.getRange(rowIndex, Q_COL.QUESTION).setValue(newQuestion);
     logAudit('ADD_UPDATE', member.email, member.name, ticketId, { textLength: text.length });
     return { success: true };
@@ -921,13 +940,23 @@ function reopenAnsweredTicket(ticketId, updateText, requestingEmail) {
   });
 }
 
-function assignQuestion(ticketId, assigneeEmail, requestingEmail) {
+function assignQuestion(ticketId, assigneeEmail, requestingEmail, note) {
   return withLock(() => {
     const requester = requireSupportRole(requestingEmail);
     const assignee = requireSupportRole(assigneeEmail);
     const target = requireQuestionRow(ticketId);
+
+    // Optional note for the next supervisor: appended to the question log
+    // atomically with the assignment (same lock, same row).
+    const noteText = String(note || '').trim();
+    if (noteText) {
+      const currentQuestion = target.sheet.getRange(target.rowIndex, Q_COL.QUESTION).getValue();
+      target.sheet.getRange(target.rowIndex, Q_COL.QUESTION)
+        .setValue(String(currentQuestion || '') + "\n\n" + buildNoteEntry(noteText, requester.name));
+    }
+
     target.sheet.getRange(target.rowIndex, Q_COL.ASSIGNED).setValue(assignee.email);
-    logAudit('ASSIGN', requester.email, requester.name, ticketId, { assignedTo: assignee.email });
+    logAudit('ASSIGN', requester.email, requester.name, ticketId, { assignedTo: assignee.email, note: !!noteText });
     return { success: true };
   });
 }
@@ -979,6 +1008,45 @@ function toggleReadStatus(ticketId, isRead, requestingEmail) {
     }
     cell.setValue(list.join(', '));
     return { success: true };
+  });
+}
+
+// Marks every answered ticket as read for the caller in ONE read + ONE write
+// (replaces N separate round-trips from the old client loop).
+// Non-Support callers (Coordinators) can only mark their own tickets.
+function markAllAnsweredRead(requestingEmail) {
+  return withLock(() => {
+    const member = requireTeamMember(requestingEmail);
+    const email = normalizeEmail(requestingEmail);
+    const aSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ANSWERED);
+    const lastRow = aSheet.getLastRow();
+    if (lastRow < 2) return { success: true, updated: 0 };
+
+    // Single read of every answered row so we can derive eligibility + read lists
+    // without per-row API calls.
+    const data = aSheet.getRange(2, 1, lastRow - 1, A_WIDTH).getValues();
+    const requesterIsSupport = isSupportMember(member);
+    let updated = 0;
+    const newReadVals = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const rowAskerEmail = String(data[i][A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
+      const rowAskerName = String(data[i][A_COL.ASKED_BY - 1] || '').trim().toLowerCase();
+      const isOwn = rowAskerEmail === email || (rowAskerName && rowAskerName === String(member.name).trim().toLowerCase());
+      const eligible = requesterIsSupport ? true : isOwn;
+      let list = parseReadByList(data[i][A_COL.READ_BY - 1]).filter(e => e !== '*');
+      if (eligible && list.indexOf(email) === -1) {
+        list.push(email);
+        updated++;
+      }
+      newReadVals.push([list.join(', ')]);
+    }
+
+    if (updated > 0) {
+      aSheet.getRange(2, A_COL.READ_BY, lastRow - 1, 1).setValues(newReadVals);
+    }
+    logAudit('MARK_ALL_READ', member.email, member.name, '', { updated: updated });
+    return { success: true, updated: updated };
   });
 }
 
