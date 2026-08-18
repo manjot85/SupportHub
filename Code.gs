@@ -52,9 +52,9 @@ const Q_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, DUE: 5, PRIORITY: 6,
   HOURS_LEFT: 7, LINK: 8, ANSWER: 9, STATUS: 10, ASSIGNED: 11,
   TICKET_ID: 12, HOLD_REASON: 13, HOLD_SINCE: 14, HOLD_ACCUM: 15, ASKED_BY_EMAIL: 16,
-  FOLLOWUP: 17
+  FOLLOWUP: 17, ASSIGN_NOTES: 18
 };
-const Q_WIDTH = 17;
+const Q_WIDTH = 18;
 
 const A_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, ANSWERED: 5, PRIORITY: 6,
@@ -196,6 +196,18 @@ function ensureQuestionsSchema(sheet) {
       range.setValues(vals);
     }
   }
+
+  lastCol = Math.max(sheet.getLastColumn(), 1);
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers[Q_COL.ASSIGN_NOTES - 1] !== 'Assignment Notes') {
+    sheet.getRange(1, Q_COL.ASSIGN_NOTES).setValue("Assignment Notes");
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      const range = sheet.getRange(2, Q_COL.ASSIGN_NOTES, lastRow - 1, 1);
+      const vals = range.getValues().map(r => [r[0] || ""]);
+      range.setValues(vals);
+    }
+  }
 }
 
 function ensureAnsweredSchema(sheet) {
@@ -324,7 +336,7 @@ function getTeamMembers() {
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] && String(data[i][0]).trim() !== "") {
       team.push({
-        name: String(data[i][0]).trim(),
+        name: stripNoraPrefix(String(data[i][0]).trim()),
         title: String(data[i][1]).trim(),
         status: String(data[i][2]).trim(),
         category: String(data[i][3]).trim(),
@@ -335,6 +347,16 @@ function getTeamMembers() {
     }
   }
   return team;
+}
+
+// Some Team Setup names carry a leading brand prefix token ("Nora") that is not
+// part of the person's real name (e.g. "Nora - Alice Smith", "Nora: Alice Smith").
+// Strip it here so the whole UI (login dropdown, headers, filters, Team table,
+// mentions) shows clean names. If "Nora" alone is the entire name, it is kept.
+function stripNoraPrefix(name) {
+  const raw = String(name || '').trim();
+  const cleaned = raw.replace(/^Nora[\s\-_:/]*/i, '').trim();
+  return cleaned || raw;
 }
 
 // ---- Password hashing (Admin accounts only) ----
@@ -583,6 +605,7 @@ function getQuestionsData(requestingEmail) {
           holdReason: String(row[Q_COL.HOLD_REASON - 1] || "").trim(),
           holdSince: holdSinceRaw ? safeIsoDate(holdSinceRaw) : "",
           isFollowUp: row[Q_COL.FOLLOWUP - 1] === true,
+          assignNotes: String(row[Q_COL.ASSIGN_NOTES - 1] || "").trim(),
           isRead: true
         });
       }
@@ -921,18 +944,30 @@ function reopenAnsweredTicket(ticketId, updateText, requestingEmail) {
   });
 }
 
-function assignQuestion(ticketId, assigneeEmail, requestingEmail) {
+function assignQuestion(ticketId, assigneeEmail, requestingEmail, notes) {
   return withLock(() => {
     const requester = requireSupportRole(requestingEmail);
     const assignee = requireSupportRole(assigneeEmail);
     const target = requireQuestionRow(ticketId);
-    target.sheet.getRange(target.rowIndex, Q_COL.ASSIGNED).setValue(assignee.email);
-    logAudit('ASSIGN', requester.email, requester.name, ticketId, { assignedTo: assignee.email });
+    const sheet = target.sheet;
+    const rowIndex = target.rowIndex;
+
+    sheet.getRange(rowIndex, Q_COL.ASSIGNED).setValue(assignee.email);
+
+    const note = String(notes || '').trim();
+    if (note) {
+      const stamp = formatCSTStamp(new Date());
+      const entry = "[Assign to " + assignee.name + " · " + stamp + " CST by " + requester.name + "]: " + note;
+      const currentNotes = String(sheet.getRange(rowIndex, Q_COL.ASSIGN_NOTES).getValue() || '').trim();
+      sheet.getRange(rowIndex, Q_COL.ASSIGN_NOTES).setValue(currentNotes ? currentNotes + "\n\n" + entry : entry);
+    }
+
+    logAudit('ASSIGN', requester.email, requester.name, ticketId, { assignedTo: assignee.email, hasNotes: !!note });
     return { success: true };
   });
 }
 
-function assignQuestionsBulk(ticketIds, assigneeEmail, requestingEmail) {
+function assignQuestionsBulk(ticketIds, assigneeEmail, requestingEmail, notes) {
   return withLock(() => {
     const requester = requireSupportRole(requestingEmail);
     const assignee = requireSupportRole(assigneeEmail);
@@ -940,16 +975,23 @@ function assignQuestionsBulk(ticketIds, assigneeEmail, requestingEmail) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const qSheet = ss.getSheetByName(SHEET_QUESTIONS);
     let updated = 0;
+    const note = String(notes || '').trim();
+    const stamp = formatCSTStamp(new Date());
 
     (ticketIds || []).forEach(id => {
       const rowIndex = findRowIndexByTicketId(qSheet, id, Q_COL.TICKET_ID);
       if (rowIndex !== -1) {
         qSheet.getRange(rowIndex, Q_COL.ASSIGNED).setValue(assignee.email);
+        if (note) {
+          const entry = "[Assign to " + assignee.name + " · " + stamp + " CST by " + requester.name + "]: " + note;
+          const currentNotes = String(qSheet.getRange(rowIndex, Q_COL.ASSIGN_NOTES).getValue() || '').trim();
+          qSheet.getRange(rowIndex, Q_COL.ASSIGN_NOTES).setValue(currentNotes ? currentNotes + "\n\n" + entry : entry);
+        }
         updated++;
       }
     });
 
-    logAudit('ASSIGN_BULK', requester.email, requester.name, '', { assignedTo: assignee.email, count: updated });
+    logAudit('ASSIGN_BULK', requester.email, requester.name, '', { assignedTo: assignee.email, count: updated, hasNotes: !!note });
     return { success: true, updated: updated };
   });
 }
