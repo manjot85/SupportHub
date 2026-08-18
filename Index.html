@@ -3,9 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <title>Support Hub</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 .table-fixed-layout { table-layout: fixed; width: 100%; }
@@ -15,90 +12,17 @@
 .rich-editor-content { min-height: 90px; outline: none; }
 .rich-editor-content img { max-width: 100%; max-height: 250px; border-radius: 8px; margin: 6px 0; display: inline-block; border: 1px solid #e2e8f0; }
 
-/* ============================================================================
-   Design system pass
-   Standardizes one type family (Inter), a refined scale, lighter weights and
-   consistent density so every surface reads the same: minimalist & elegant.
-
-   IMPORTANT: rules are prefixed with "body" so they outrank the Tailwind Play
-   CDN stylesheet, which is injected AFTER this <style> block at runtime.
-   ========================================================================== */
+/* ---- Typography scale: keep the minimal aesthetic, just more readable ----
+   The app was originally sized around 9-12px. These overrides lift every
+   utility size up one step so the UI no longer feels tiny, without touching
+   the layout or design language. */
 html { font-size: 16px; }
-
-/* One type family for the whole app (headings, body, tables, controls) */
-body.font-sans {
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
-}
-
-/* Refined type scale: readable, never tiny, never oversized */
-body .text-\[9px\]  { font-size: 0.6875rem; line-height: 1.3; }   /* 9px  -> 11px */
-body .text-\[10px\] { font-size: 0.75rem;   line-height: 1.3; }   /* 10px -> 12px */
-body .text-\[11px\] { font-size: 0.8125rem; line-height: 1.35; }  /* 11px -> 13px */
-body .text-xs       { font-size: 0.875rem;  line-height: 1.45; }  /* 12px -> 14px */
-body .text-sm       { font-size: 0.9375rem; line-height: 1.5; }   /* 14px -> 15px */
-body .text-base     { font-size: 1rem;      line-height: 1.5; }   /* 16px -> 16px */
-body .text-lg       { font-size: 1.125rem;  line-height: 1.4; }   /* 18px -> 18px */
-body .text-2xl      { font-size: 1.5rem;    line-height: 1.3; }   /* 24px -> 24px */
-body .text-3xl      { font-size: 1.75rem;   line-height: 1.25; }  /* 30px -> 28px */
-
-/* Lighter weight hierarchy: headings 600, labels/buttons 500, body 400 */
-body .font-black    { font-weight: 700; }
-body .font-bold     { font-weight: 600; }
-body .font-semibold { font-weight: 500; }
-body .font-medium   { font-weight: 500; }
-
-/* Controls inherit the type family & get consistent, calm hover motion */
-body button,
-body input,
-body select,
-body textarea { font-family: inherit; }
-body button {
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
-
-/* A button label never wraps onto two lines */
-body button { white-space: nowrap; }
-
-/* Sidebar navigation */
-.nav-tab {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .55rem .75rem;
-  border-radius: .5rem;
-  font-size: .875rem;
-  font-weight: 500;
-  color: #94a3b8;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color .15s ease, color .15s ease;
-  flex: 0 0 auto;
-}
-.nav-tab:hover { color: #f1f5f9; background: #1e293b; }
-.nav-tab.active { color: #6ee7b7; background: rgba(16, 185, 129, .12); }
-
-/* Uniform, minimal tables: light uppercase headers, one weight for all body cells */
-body .table-fixed-layout thead th {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-body .table-fixed-layout tbody td,
-body .table-fixed-layout tbody td > div { font-weight: 400; }
-
-/* Density: tighter cards, table cells and controls */
-body .p-3    { padding: 0.875rem; } /* 12px -> 14px */
-body .p-3\.5 { padding: 1rem; }     /* 14px -> 16px */
-body .p-6    { padding: 1.25rem; }  /* 24px -> 20px */
-body .p-8    { padding: 1.75rem; }  /* 32px -> 28px */
-
-/* Phones: keep cards extra-compact so more fits on one screen */
-@media (max-width: 640px) {
-  body .p-6 { padding: 1rem; }
-  body .p-3 { padding: 0.75rem; }
-}
+.text-\[9px\]  { font-size: 0.6875rem; line-height: 1.1; }  /* 9px  -> 11px  */
+.text-\[10px\] { font-size: 0.75rem;   line-height: 1.2; }  /* 10px -> 12px  */
+.text-\[11px\] { font-size: 0.8125rem; line-height: 1.25; } /* 11px -> 13px  */
+.text-xs       { font-size: 0.875rem;  line-height: 1.4; }  /* 12px -> 14px  */
+.text-sm       { font-size: 0.9375rem; line-height: 1.5; }  /* 14px -> 15px  */
+.text-base     { font-size: 1.0625rem; }                    /* 16px -> 17px  */
 </style>
 </head>
 <body class="bg-slate-50/80 font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
@@ -134,48 +58,42 @@ Sign In to Portal &rarr;
 </div>
 
 <!-- MAIN APP CONTAINER -->
-<div id="app-container" class="hidden">
-<div class="flex min-h-screen">
-<aside class="w-full md:w-60 md:fixed md:inset-y-0 md:left-0 z-40 bg-slate-900 text-white flex md:flex-col items-center md:items-stretch">
-
-  <!-- Brand -->
-  <div class="flex items-center gap-2.5 px-4 py-3 shrink-0 md:px-5 md:py-4 md:border-b md:border-slate-800">
-    <div class="w-8 h-8 md:w-9 md:h-9 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-slate-950 text-sm md:text-base shadow shrink-0">H</div>
-    <div class="hidden md:block">
-      <h1 class="text-sm font-semibold tracking-tight">Support Hub</h1>
-      <p id="current-date" class="text-[11px] text-slate-400"></p>
-    </div>
-    <button onclick="logoutToLogin()" class="md:hidden ml-auto shrink-0 text-[11px] bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-md text-slate-300 font-medium transition">Logout</button>
-  </div>
-
-  <!-- Navigation -->
-  <nav class="flex md:flex-col flex-1 items-center gap-1 md:gap-1 overflow-x-auto md:overflow-x-visible md:overflow-y-auto md:px-3 md:py-4 md:w-full min-w-0 px-3 py-2">
-    <button onclick="switchTab('coordinator')" id="tab-coordinator" class="nav-tab active">Coordinator Workspace</button>
-    <button onclick="switchTab('answered')" id="tab-answered" class="nav-tab">
-      <span>Answered Tickets</span>
-      <span id="unread-ticker" class="hidden bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">0</span>
-    </button>
-    <button onclick="switchTab('all-tickets')" id="tab-all-tickets" class="nav-tab">All Questions / Tickets</button>
-    <button onclick="switchTab('supervisor')" id="tab-supervisor" class="nav-tab hidden">Supervisor Desk <span id="pending-ticker" class="hidden bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">0</span></button>
-    <button onclick="switchTab('reporting')" id="tab-reporting" class="nav-tab hidden">Reporting Analytics</button>
-    <button onclick="switchTab('team')" id="tab-team" class="nav-tab hidden">Team Setup</button>
-  </nav>
-
-  <!-- User + logout -->
-  <div class="hidden md:flex flex-col border-t border-slate-800 px-5 py-4 gap-3">
-    <div class="flex items-center justify-between gap-3">
-      <div class="min-w-0">
-        <p id="header-user-name" class="font-semibold text-white text-xs truncate">User Name</p>
-        <span id="user-role-tag" class="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-400 text-slate-950">Coordinator</span>
-      </div>
-      <button onclick="logoutToLogin()" class="shrink-0 text-[11px] bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded-md text-slate-300 font-medium transition">Logout</button>
-    </div>
-  </div>
-</aside>
-
-<main class="flex-1 min-w-0 p-4 md:ml-60 md:p-6">
+<div id="app-container" class="hidden min-h-screen flex flex-col">
+<header class="bg-slate-900 text-white shadow-lg sticky top-0 z-40">
+<div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+<div class="flex items-center space-x-3">
+<div class="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center font-black text-slate-950 text-lg shadow">H</div>
+<div>
+<h1 class="text-base font-bold tracking-tight">Support Hub</h1>
+<p id="current-date" class="text-[10px] text-slate-400"></p>
+</div>
+</div>
+<div class="flex items-center space-x-3 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+<div class="text-right">
+<p id="header-user-name" class="font-bold text-white text-xs">User Name</p>
+</div>
+<div>
+<span id="user-role-tag" class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-400 text-slate-950">Coordinator</span>
+</div>
+<button onclick="logoutToLogin()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-md text-slate-300 font-semibold transition ml-2">Logout</button>
+</div>
+</div>
+<div class="max-w-7xl mx-auto px-4 flex space-x-8 text-xs font-semibold border-t border-slate-800 overflow-x-auto">
+<button onclick="switchTab('coordinator')" id="tab-coordinator" class="py-3 text-emerald-400 border-b-2 border-emerald-400 whitespace-nowrap">Coordinator Workspace</button>
+<button onclick="switchTab('answered')" id="tab-answered" class="py-3 text-slate-400 hover:text-white flex items-center gap-1.5 whitespace-nowrap">
+<span>Answered Tickets</span>
+<span id="unread-ticker" class="hidden bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span>
+</button>
+<button onclick="switchTab('all-tickets')" id="tab-all-tickets" class="py-3 text-slate-400 hover:text-white whitespace-nowrap">All Questions / Tickets</button>
+<button onclick="switchTab('supervisor')" id="tab-supervisor" class="py-3 text-slate-400 hover:text-white hidden items-center gap-1.5 whitespace-nowrap">Supervisor Desk <span id="pending-ticker" class="hidden bg-amber-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span></button>
+<button onclick="switchTab('reporting')" id="tab-reporting" class="py-3 text-slate-400 hover:text-white hidden whitespace-nowrap">Reporting Analytics</button>
+<button onclick="switchTab('team')" id="tab-team" class="py-3 text-slate-400 hover:text-white hidden whitespace-nowrap">Team Setup</button>
+</div>
+</header>
 
 <div id="toast-container" class="fixed top-5 right-5 z-50 space-y-2"></div>
+
+<main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
 
 <!-- TAB 1: COORDINATOR WORKSPACE -->
 <section id="view-coordinator" class="space-y-6">
@@ -191,14 +109,9 @@ Sign In to Portal &rarr;
 <div class="border border-slate-300 rounded-t-xl bg-slate-50 p-1.5 flex items-center gap-1 border-b-0 text-xs text-slate-600">
   <button type="button" onclick="execEditorCmd('bold')" class="px-2 py-0.5 rounded hover:bg-slate-200 font-bold" title="Bold">B</button>
   <button type="button" onclick="execEditorCmd('italic')" class="px-2 py-0.5 rounded hover:bg-slate-200 italic" title="Italic">I</button>
-  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline flex items-center gap-1" title="Insert Link">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.5-1.5"/></svg>
-    <span>Link</span>
-  </button>
-  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer flex items-center gap-1" title="Attach Image">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-    <span>Image</span>
-    <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
+  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline" title="Insert Link">🔗 Link</button>
+  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer" title="Attach Image">
+    📷 Image <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
   </label>
 </div>
 
@@ -389,7 +302,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 </div>
 
 <!-- FILTER / ACTION BAR -->
-<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3 sticky top-3 z-30">
+<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3 sticky top-[104px] z-30">
 <div class="flex flex-wrap items-center gap-2">
 <div class="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-semibold">
 <button id="sup-scope-all" onclick="setSupScope('all')" class="px-3 py-1.5 bg-slate-900 text-white">All Queue</button>
@@ -573,11 +486,10 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 </main>
 </div>
-</div>
 
 <!-- CUSTOM DIALOG -->
 <div id="custom-dialog-overlay" class="fixed inset-0 bg-slate-950/70 z-[60] hidden flex items-center justify-center p-4 backdrop-blur-sm">
-<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+<div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-slate-200">
 <p id="custom-dialog-message" class="text-sm text-slate-800 font-medium leading-relaxed preserve-lines"></p>
 <div id="custom-dialog-input-row" class="hidden mt-3">
 <textarea id="custom-dialog-input" rows="3" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none"></textarea>
@@ -591,7 +503,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- ANSWER MODAL -->
 <div id="answer-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
 <div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
 <div class="min-w-0 flex-1">
 <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">Resolve Ticket</span>
@@ -625,14 +537,9 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <div class="border border-slate-300 rounded-t-xl bg-slate-50 p-1.5 flex items-center gap-1 border-b-0 text-xs text-slate-600">
   <button type="button" onclick="execEditorCmd('bold')" class="px-2 py-0.5 rounded hover:bg-slate-200 font-bold" title="Bold">B</button>
   <button type="button" onclick="execEditorCmd('italic')" class="px-2 py-0.5 rounded hover:bg-slate-200 italic" title="Italic">I</button>
-  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline flex items-center gap-1" title="Insert Link">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.5-1.5"/></svg>
-    <span>Link</span>
-  </button>
-  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer flex items-center gap-1" title="Attach Image">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-    <span>Image</span>
-    <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
+  <button type="button" onclick="promptInsertLink()" class="px-2 py-0.5 rounded hover:bg-slate-200 underline" title="Insert Link">🔗 Link</button>
+  <label class="px-2 py-0.5 rounded hover:bg-slate-200 cursor-pointer" title="Attach Image">
+    📷 Image <input type="file" accept="image/*" class="hidden" onchange="handleImageInsert(event)">
   </label>
 </div>
 
@@ -668,11 +575,11 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- VIEW MODAL -->
 <div id="view-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
 <div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
 <div class="min-w-0 flex-1">
 <span id="vmodal-read-badge" class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-rose-500 text-white">UNREAD</span>
-<h3 id="vmodal-event" class="text-base font-semibold text-slate-900 mt-1 break-all">Event Name</h3>
+<h3 id="vmodal-event" class="text-lg font-bold text-slate-900 mt-1 break-all">Event Name</h3>
 <p class="text-[11px] text-slate-400">Asked by: <span id="vmodal-asked" class="font-semibold text-slate-700"></span></p>
 </div>
 <button onclick="closeViewModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
@@ -708,7 +615,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- ADMIN EDIT MODAL -->
 <div id="admin-edit-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
 <div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
 <div class="min-w-0 flex-1">
 <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200/60">Admin Edit</span>
@@ -759,11 +666,11 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- TICKET DETAIL MODAL -->
 <div id="ticket-detail-modal" class="fixed inset-0 bg-slate-950/70 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
+<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full my-8 border border-slate-200 max-h-[85vh] flex flex-col">
 <div class="flex justify-between items-start gap-3 p-6 pb-3 border-b shrink-0">
 <div class="min-w-0 flex-1">
 <span id="tdmodal-status-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>
-<h3 id="tdmodal-event" class="text-base font-semibold text-slate-900 mt-1 break-all">Event Name</h3>
+<h3 id="tdmodal-event" class="text-lg font-bold text-slate-900 mt-1 break-all">Event Name</h3>
 <p class="text-[11px] text-slate-400">Asked by: <span id="tdmodal-asked" class="font-semibold text-slate-700"></span></p>
 </div>
 <button onclick="closeTicketDetailModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
@@ -1103,95 +1010,6 @@ function showHoldReasonAlert(reason) {
 }
 
 // ============================================================================
-// QUESTION NOTES LOG
-// Questions accumulate short note entries appended to the question cell:
-//   [MM/DD HH:MM · JS]: note text            (new compact format)
-//   [Update ... CST by Name]: text           (legacy format, still parsed)
-//   [Previous Answer by Name]: text          (legacy reopen entries)
-// We split the cell into the original question + a log, display the log
-// newest-first, and highlight recent notes and the current user's own notes.
-// ============================================================================
-function initialsOf(name) {
-  return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 3)
-    .map(w => w.charAt(0).toUpperCase()).join('');
-}
-
-function parseNoteTime(dayPart, timePart) {
-  const dm = String(dayPart).split('/');
-  const tp = String(timePart).split(':');
-  if (dm.length !== 2 || tp.length !== 2) return null;
-  const month = parseInt(dm[0], 10) - 1;
-  const day = parseInt(dm[1], 10);
-  const hour = parseInt(tp[0], 10);
-  const minute = parseInt(tp[1], 10);
-  if ([month, day, hour, minute].some(isNaN)) return null;
-  const now = new Date();
-  let date = new Date(now.getFullYear(), month, day, hour, minute);
-  // Guard against a December/January wrap looking like the future.
-  if (date.getTime() > now.getTime() + 36 * 3600 * 1000) {
-    date = new Date(now.getFullYear() - 1, month, day, hour, minute);
-  }
-  return date.getTime();
-}
-
-function parseQuestionLog(html) {
-  const blocks = String(html || '').split(/\n{2,}/);
-  const firstBlock = blocks.shift() || '';
-  const entries = [];
-  blocks.forEach(block => {
-    const b = String(block).trim();
-    let m = b.match(/^\[(\d{2}\/\d{2}) (\d{2}:\d{2})\s*·\s*([A-Z]+)\]:\s*([\s\S]*)$/);
-    if (m) { entries.push({ kind: 'new', datePart: m[1], timePart: m[2], initials: m[3], text: m[4], ts: parseNoteTime(m[1], m[2]) }); return; }
-    m = b.match(/^\[(.*?)\s+CST\s+by\s+(.+?)\]:\s*([\s\S]*)$/);
-    if (m) { entries.push({ kind: 'old', name: m[2].trim(), text: m[3], ts: null }); return; }
-    m = b.match(/^\[Previous Answer by\s+(.+?)\]:\s*([\s\S]*)$/);
-    if (m) { entries.push({ kind: 'prev', name: m[1].trim(), text: m[2], ts: null }); return; }
-    // Non-log continuation block - keep it attached to the original question.
-    firstBlock += '\n' + block;
-  });
-  entries.reverse(); // newest first
-  return { questionHtml: firstBlock, entries: entries };
-}
-
-function questionPreviewHtml(q) {
-  if (!q || !q.question) return '';
-  return parseQuestionLog(q.question).questionHtml;
-}
-
-// Returns HTML to drop INSIDE the existing question-detail box: the original
-// question followed by the notes log, newest first, with highlights.
-function questionLogHtml(q) {
-  const parsed = parseQuestionLog(q ? q.question : '');
-  let html = parsed.questionHtml || '—';
-  if (parsed.entries.length) {
-    const meInitials = initialsOf(currentUser && currentUser.name);
-    const meName = ((currentUser && currentUser.name) || '').toLowerCase();
-    const now = Date.now();
-    html += '<div class="mt-2.5 pt-2.5 border-t border-slate-200 space-y-1.5">';
-    parsed.entries.forEach(e => {
-      const isMine = e.kind === 'new' ? e.initials === meInitials : (e.name || '').toLowerCase() === meName;
-      const isRecent = !!e.ts && e.ts <= now && (now - e.ts) < 86400000;
-      let cls = 'border-slate-200 bg-white text-slate-700';
-      let badge = '';
-      if (isMine) { cls = 'border-blue-300 bg-blue-50/70 text-blue-900'; }
-      if (isRecent) { cls = 'border-amber-300 bg-amber-50 text-amber-900'; }
-      if (isMine && isRecent) { cls = 'border-emerald-300 bg-emerald-50 text-emerald-900'; }
-      if (isRecent) badge += '<span class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200/60">RECENT</span>';
-      if (isMine) badge += '<span class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200/60">MINE</span>';
-      const meta = e.kind === 'new'
-        ? '[' + e.datePart + ' ' + e.timePart + ' · ' + e.initials + ']'
-        : '[' + (e.kind === 'prev' ? 'prev' : 'log') + ' · ' + initialsOf(e.name) + ']';
-      html += '<div class="rounded-lg px-3 py-2 text-xs border ' + cls + '">' +
-        '<span class="font-mono font-bold text-[11px] opacity-75 mr-1.5">' + esc(meta) + '</span>' +
-        '<span class="preserve-lines">' + esc(e.text) + '</span>' + badge +
-      '</div>';
-    });
-    html += '</div>';
-  }
-  return html;
-}
-
-// ============================================================================
 // CUSTOM DIALOG ENGINE
 // ============================================================================
 let customDialogResolver = null;
@@ -1327,6 +1145,7 @@ function finishLogin(member) {
 
   const support = isSupportUser(member);
   document.getElementById('tab-supervisor').classList.toggle('hidden', !support);
+  document.getElementById('tab-supervisor').classList.toggle('flex', support);
   document.getElementById('tab-reporting').classList.toggle('hidden', !support);
   document.getElementById('tab-team').classList.toggle('hidden', !support);
   document.getElementById('all-admin-th').classList.toggle('hidden', !isAdminUser(member));
@@ -1402,7 +1221,12 @@ function switchTab(name) {
     const view = document.getElementById('view-' + t);
     const tab = document.getElementById('tab-' + t);
     if (view) view.classList.toggle('hidden', t !== name);
-    if (tab) tab.classList.toggle('active', t === name);
+    if (tab) {
+      tab.classList.toggle('text-emerald-400', t === name);
+      tab.classList.toggle('border-b-2', t === name);
+      tab.classList.toggle('border-emerald-400', t === name);
+      tab.classList.toggle('text-slate-400', t !== name);
+    }
   });
   renderCurrentTab();
 }
@@ -1596,7 +1420,7 @@ function renderCoordinatorQuestions() {
       '<td class="p-3"><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded ' + prioClass + '">' + prio + '</span></td>' +
       '<td class="p-3 text-slate-500">' + formatCSTDateTime(q.created, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</td>' +
       '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName) + '</td>' +
-      '<td class="p-3 text-slate-700 truncate">' + questionPreviewHtml(q) + followTag + '</td>' +
+      '<td class="p-3 text-slate-700 truncate">' + q.question + followTag + '</td>' +
       '<td class="p-3 text-center">' + statusHtml + '</td>' +
       '<td class="p-3 text-right"><button onclick="addUpdateToQuestion(\'' + esc(q.ticketId) + '\')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">Add Info</button></td>';
     body.appendChild(tr);
@@ -1679,7 +1503,7 @@ function renderAnsweredTab() {
     tr.innerHTML =
       '<td class="p-3"><span class="px-2 py-0.5 text-[9px] font-bold rounded ' + (q.isRead ? 'bg-slate-100 text-slate-500 border border-slate-200/60' : 'bg-rose-500 text-white shadow-sm') + '">' + (q.isRead ? 'READ' : 'UNREAD') + '</span></td>' +
       '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName) + internalTag + '</td>' +
-      '<td class="p-3"><div class="text-slate-900 truncate font-semibold">' + questionPreviewHtml(q) + '</div><div class="text-emerald-700 text-[11px] truncate font-medium">' + q.answer + '</div></td>' +
+      '<td class="p-3"><div class="text-slate-900 truncate font-semibold">' + q.question + '</div><div class="text-emerald-700 text-[11px] truncate font-medium">' + q.answer + '</div></td>' +
       '<td class="p-3 text-slate-700 font-medium truncate">' + esc(getUserDisplayName(q.answeredBy)) + '</td>' +
       '<td class="p-3 text-center font-mono text-[11px] text-slate-500">' + esc(q.turnaroundHours) + ' hrs</td>' +
       '<td class="p-3 text-right"><button onclick="toggleRead(\'' + esc(q.ticketId) + '\', ' + (!q.isRead) + ')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">' + (q.isRead ? 'Unread' : 'Read') + '</button></td>';
@@ -1717,7 +1541,7 @@ function openViewModal(q) {
   activeViewQuestion = q;
   document.getElementById('vmodal-event').innerText = q.eventName || '—';
   document.getElementById('vmodal-asked').innerText = getUserDisplayName(q.askedBy);
-  document.getElementById('vmodal-question').innerHTML = questionLogHtml(q);
+  document.getElementById('vmodal-question').innerHTML = q.question || '—';
   document.getElementById('vmodal-answer').innerHTML = q.answer || 'No answer recorded.';
   document.getElementById('vmodal-by').innerText = getUserDisplayName(q.answeredBy);
   document.getElementById('vmodal-speed').innerText = q.turnaroundHours + ' Hours' + (q.holdHoursExcluded ? ' (excludes ' + q.holdHoursExcluded.toFixed(1) + ' hrs on hold)' : '');
@@ -1800,7 +1624,13 @@ function renderAllTickets() {
   if (!body || !currentUser) return;
   body.innerHTML = '';
 
+  const userIsSupport = isSupportUser(currentUser);
+
   const filtered = allQuestions.filter(q => {
+    // Coordinator isolation: internal Support/Admin questions and
+    // managerial escalations stay hidden from standard Coordinators here.
+    if (isAskedBySupport(q) && !userIsSupport) return false;
+
     const matchesSearch = q.question.toLowerCase().includes(search) ||
       q.eventName.toLowerCase().includes(search) ||
       getUserDisplayName(q.askedBy).toLowerCase().includes(search);
@@ -1842,11 +1672,11 @@ function renderAllTickets() {
     tr.innerHTML =
       '<td class="p-3"><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded whitespace-nowrap ' + prioClass + '">' + cleanPrio + '</span></td>' +
       '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName || '—') + internalTag + '</td>' +
-      '<td class="p-3 text-slate-700 truncate">' + questionPreviewHtml(q) + '</td>' +
+      '<td class="p-3 text-slate-700 truncate">' + q.question + '</td>' +
       '<td class="p-3 text-slate-700 font-medium truncate">' + esc(getUserDisplayName(q.askedBy)) + '</td>' +
       '<td class="p-3 text-center">' + (q.caseLink ? '<a href="' + esc(q.caseLink) + '" target="_blank" class="text-blue-600 font-semibold underline hover:text-blue-800">Link</a>' : '—') + '</td>' +
       '<td class="p-3 text-center"><span class="inline-block px-2.5 py-0.5 text-[10px] font-semibold rounded whitespace-nowrap ' + statusClass + '">' + label + '</span>' + followUpTag + '</td>' +
-      '<td class="p-3 text-right whitespace-nowrap ' + (isAdmin ? '' : 'hidden') + '"><div class="flex justify-end gap-2">' +
+      '<td class="p-3 text-right ' + (isAdmin ? '' : 'hidden') + '"><div class="flex justify-end gap-2">' +
         '<button onclick="openEditModalByKey(\'' + esc(q.sheet) + '\', \'' + esc(q.ticketId) + '\')" class="text-blue-600 font-semibold underline text-[11px] hover:text-blue-800">Edit</button>' +
         '<button onclick="deleteRecord(\'' + esc(q.sheet) + '\', \'' + esc(q.ticketId) + '\')" class="text-rose-600 font-semibold underline text-[11px] hover:text-rose-800">Delete</button>' +
       '</div></td>';
@@ -1861,7 +1691,7 @@ function openTicketDetail(sheet, ticketId) {
   const isAnswered = q.sheet === 'Answered';
   document.getElementById('tdmodal-event').innerText = q.eventName || '—';
   document.getElementById('tdmodal-asked').innerText = getUserDisplayName(q.askedBy);
-  document.getElementById('tdmodal-question').innerHTML = questionLogHtml(q);
+  document.getElementById('tdmodal-question').innerHTML = q.question || '—';
 
   const badge = document.getElementById('tdmodal-status-badge');
   if (isAnswered) {
@@ -2208,7 +2038,7 @@ function renderSupervisorDesk() {
               '<th class="p-3">QUESTION PREVIEW (CLICK TO ANSWER)</th>' +
               '<th class="p-3 w-36">ASKED / ASSIGNED</th>' +
               '<th class="p-3 w-28 text-center">WAITING</th>' +
-              '<th class="p-3 w-60 text-right">ACTION</th>' +
+              '<th class="p-3 w-44 text-right">ACTION</th>' +
             '</tr>' +
           '</thead>' +
           '<tbody class="divide-y divide-slate-100">';
@@ -2220,7 +2050,7 @@ function renderSupervisorDesk() {
 
       let statusBadgeHtml = '';
       if (onHold) {
-        statusBadgeHtml = '<button onclick="event.stopPropagation(); showHoldReasonAlert(\'' + esc(q.holdReason) + '\')" class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 hover:bg-purple-100/80 transition flex items-center gap-1" title="Click to view full reason">On Hold <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>';
+        statusBadgeHtml = '<button onclick="event.stopPropagation(); showHoldReasonAlert(\'' + esc(q.holdReason) + '\')" class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 hover:bg-purple-100/80 transition" title="Click to view full reason">On Hold ℹ️</button>';
       } else if (prio === 'P1') {
         statusBadgeHtml = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-50 text-rose-700 border border-rose-200/60">P1 Urgent</span>';
       } else {
@@ -2239,16 +2069,16 @@ function renderSupervisorDesk() {
           '</td>' +
           '<td class="p-3.5"><div class="flex items-center">' + statusBadgeHtml + '</div></td>' +
           '<td class="p-3.5 font-semibold text-slate-800 truncate">' + esc(q.eventName || '—') + followTag + mineBadge + internalTag + '</td>' +
-          '<td class="p-3.5"><div class="text-slate-800 font-medium truncate hover:text-emerald-700 transition">' + questionPreviewHtml(q) + '</div>' + (q.caseLink ? '<a href="' + esc(q.caseLink) + '" target="_blank" onclick="event.stopPropagation()" class="text-[11px] text-blue-600 underline font-normal hover:text-blue-800">Open Link</a>' : '') + '</td>' +
+          '<td class="p-3.5"><div class="text-slate-800 font-medium truncate hover:text-emerald-700 transition">' + q.question + '</div>' + (q.caseLink ? '<a href="' + esc(q.caseLink) + '" target="_blank" onclick="event.stopPropagation()" class="text-[11px] text-blue-600 underline font-normal hover:text-blue-800">Open Link</a>' : '') + '</td>' +
           '<td class="p-3.5 text-slate-600 text-[11px]"><div class="font-semibold text-slate-800 truncate">' + esc(getUserDisplayName(q.askedBy)) + '</div><div class="text-slate-400 truncate text-[10px]">' + (q.assignedTo ? '→ ' + esc(getUserDisplayName(q.assignedTo)) : 'Unassigned') + '</div></td>' +
           '<td class="p-3.5 text-center"><span class="' + waitColorClass(q.hoursElapsed) + '">' + esc(q.hoursElapsed) + ' hrs</span></td>' +
-          '<td class="p-3.5 text-right whitespace-nowrap" onclick="event.stopPropagation()">' +
-            '<div class="flex items-center justify-end gap-1.5">' +
-              '<button onclick="openAnswerModal(\'' + esc(q.ticketId) + '\')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-md text-[10px] font-semibold shadow-sm transition whitespace-nowrap">Answer</button>' +
-              (!isMine ? '<button onclick="assignToMe(\'' + esc(q.ticketId) + '\')" class="text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-1.5 py-1 rounded-md text-[10px] font-medium transition whitespace-nowrap">Assign</button>' : '<button onclick="unassignTicket(\'' + esc(q.ticketId) + '\')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-1.5 py-1 rounded-md text-[10px] transition whitespace-nowrap">Unassign</button>') +
+          '<td class="p-3.5 text-right" onclick="event.stopPropagation()">' +
+            '<div class="flex items-center justify-end gap-2">' +
+              '<button onclick="openAnswerModal(\'' + esc(q.ticketId) + '\')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-sm transition">Answer</button>' +
+              (!isMine ? '<button onclick="assignToMe(\'' + esc(q.ticketId) + '\')" class="text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 py-1 rounded-md text-[10px] font-medium transition">Assign</button>' : '<button onclick="unassignTicket(\'' + esc(q.ticketId) + '\')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-2 py-1 rounded-md text-[10px] transition">Unassign</button>') +
               (onHold
-                ? '<button onclick="resumeTicket(\'' + esc(q.ticketId) + '\')" class="text-blue-600 hover:bg-blue-50 px-1.5 py-1 rounded-md text-[10px] font-medium transition whitespace-nowrap">Resume</button>'
-                : '<button onclick="holdTicket(\'' + esc(q.ticketId) + '\')" class="text-purple-600 hover:bg-purple-50 px-1.5 py-1 rounded-md text-[10px] font-medium transition whitespace-nowrap">Hold</button>') +
+                ? '<button onclick="resumeTicket(\'' + esc(q.ticketId) + '\')" class="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md text-[11px] font-medium transition">Resume</button>'
+                : '<button onclick="holdTicket(\'' + esc(q.ticketId) + '\')" class="text-purple-600 hover:bg-purple-50 px-2 py-1 rounded-md text-[11px] font-medium transition">Hold</button>') +
             '</div>' +
           '</td>' +
         '</tr>';
@@ -2260,22 +2090,17 @@ function renderSupervisorDesk() {
   });
 
   if (total === 0) {
-    container.innerHTML = '<div class="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No open tickets match the current filters.</div>';
+    container.innerHTML = '<div class="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No open tickets match the current filters. 🎉</div>';
   }
 }
 
-async function assignToMe(ticketId) {
-  const note = await customPrompt('Add a note for the next supervisor? (Optional — leave blank to skip)', {
-    placeholder: 'e.g. Client prefers evening calls',
-    okLabel: 'Assign & Note',
-    cancelLabel: 'Assign only'
-  });
+function assignToMe(ticketId) {
   google.script.run.withFailureHandler(err => {
     showToast('Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
-    showToast('Assigned to you' + (note ? ' with a note.' : '.'));
-  }).assignQuestion(ticketId, currentUser.email, currentUser.email, note || '');
+    showToast('Assigned to you.');
+  }).assignQuestion(ticketId, currentUser.email, currentUser.email);
 }
 
 function unassignTicket(ticketId) {
@@ -2350,7 +2175,7 @@ function openAnswerModal(ticketId) {
   document.getElementById('amodal-event').innerText = q.eventName || '—';
   document.getElementById('amodal-asked').innerText = getUserDisplayName(q.askedBy);
   document.getElementById('amodal-meta').innerText = 'waiting ' + q.hoursElapsed + ' hrs · ' + normalizePriority(q.priority);
-  document.getElementById('modal-question-text').innerHTML = questionLogHtml(q);
+  document.getElementById('modal-question-text').innerHTML = q.question || '—';
   
   const modalEditor = document.getElementById('modal-answer-input');
   modalEditor.innerHTML = '';
@@ -2433,18 +2258,13 @@ async function submitModalAssign() {
     await customAlert('Please choose a supervisor to assign this question to.');
     return;
   }
-  const note = await customPrompt('Add a note for the next supervisor? (Optional — leave blank to skip)', {
-    placeholder: 'e.g. Client prefers evening calls',
-    okLabel: 'Assign & Note',
-    cancelLabel: 'Assign only'
-  });
   google.script.run.withFailureHandler(err => {
     showToast('Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     closeAnswerModal();
     refreshData();
-    showToast('Question assigned successfully' + (note ? ' with a note.' : '.'));
-  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email, note || '');
+    showToast('Question assigned successfully!');
+  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email);
 }
 
 // ============================================================================
@@ -2639,7 +2459,7 @@ function filterReport(type) {
     tr.className = 'hover:bg-slate-50';
     const statusLabel = r.status === 'Hold' ? 'Hold' + (r.holdReason ? ' — ' + r.holdReason : '') : r.status;
     tr.innerHTML =
-      '<td class="p-3 truncate">' + questionPreviewHtml(r) + '</td>' +
+      '<td class="p-3 truncate">' + r.question + '</td>' +
       '<td class="p-3 truncate font-medium">' + esc(getUserDisplayName(r.askedBy)) + '</td>' +
       '<td class="p-3 truncate font-medium">' + esc(getUserDisplayName(r.answeredBy || r.assignedTo)) + '</td>' +
       '<td class="p-3 text-center font-semibold">' + esc(statusLabel) + '</td>';
