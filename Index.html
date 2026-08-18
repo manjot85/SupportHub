@@ -525,6 +525,11 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <div id="modal-question-text" class="preserve-lines bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs text-slate-800 leading-relaxed break-words"></div>
 </div>
 
+<div id="modal-notes-container" class="hidden">
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assignment Notes</label>
+<div id="modal-notes-text" class="preserve-lines bg-blue-50/60 border border-blue-200/80 text-slate-700 p-3.5 rounded-xl text-xs leading-relaxed break-words"></div>
+</div>
+
 <div id="modal-link-container" class="min-w-0">
 <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Case / Event Link</label>
 <a id="modal-case-link" href="#" target="_blank" class="text-xs font-semibold text-blue-600 underline break-all"></a>
@@ -689,6 +694,11 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <div id="tdmodal-unanswered-note" class="hidden bg-amber-50/60 border border-amber-200/80 text-amber-900 rounded-xl p-3 text-xs font-semibold">
 This ticket has not been answered yet.
+</div>
+
+<div id="tdmodal-notes-container" class="hidden">
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assignment Notes</label>
+<div id="tdmodal-notes" class="preserve-lines bg-blue-50/60 border border-blue-200/80 text-slate-700 p-3.5 rounded-xl text-xs leading-relaxed break-words"></div>
 </div>
 
 <div class="grid grid-cols-2 gap-3 text-[11px] bg-slate-50 p-3 rounded-xl border border-slate-200/80">
@@ -1711,6 +1721,11 @@ function openTicketDetail(sheet, ticketId) {
   document.getElementById('tdmodal-by').innerText = isAnswered ? getUserDisplayName(q.answeredBy) : '—';
   document.getElementById('tdmodal-assigned').innerText = q.assignedTo ? getUserDisplayName(q.assignedTo) : '—';
 
+  const notesC = document.getElementById('tdmodal-notes-container');
+  const notesEl = document.getElementById('tdmodal-notes');
+  if (q.assignNotes) { notesEl.innerText = q.assignNotes; notesC.classList.remove('hidden'); }
+  else { notesC.classList.add('hidden'); }
+
   const linkEl = document.getElementById('tdmodal-link');
   if (q.caseLink) { linkEl.href = q.caseLink; linkEl.classList.remove('hidden'); }
   else { linkEl.classList.add('hidden'); }
@@ -2094,13 +2109,15 @@ function renderSupervisorDesk() {
   }
 }
 
-function assignToMe(ticketId) {
+async function assignToMe(ticketId) {
+  const notes = await customPrompt('Assign this question to yourself? You can add an optional note for the next supervisor (shown in the question detail).', { placeholder: 'Optional note...', okLabel: 'Assign to Me' });
+  if (notes === null) return;
   google.script.run.withFailureHandler(err => {
     showToast('Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
     showToast('Assigned to you.');
-  }).assignQuestion(ticketId, currentUser.email, currentUser.email);
+  }).assignQuestion(ticketId, currentUser.email, currentUser.email, notes.trim());
 }
 
 function unassignTicket(ticketId) {
@@ -2158,13 +2175,16 @@ async function submitBulkAssign() {
   const assignee = document.getElementById('sup-bulk-assignee').value;
   if (!assignee) { await customAlert('Choose who to assign the selected tickets to.'); return; }
   const ids = Array.from(supSelected);
+  const assigneeName = getUserDisplayName(assignee);
+  const notes = await customPrompt('Assign ' + ids.length + ' selected ticket(s) to ' + assigneeName + '? You can add an optional note (shown in the question details).', { placeholder: 'Optional note...', okLabel: 'Assign' });
+  if (notes === null) return;
   google.script.run.withFailureHandler(err => {
     showToast('Bulk assign failed: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(res => {
     supSelected.clear();
     refreshData();
     showToast('Assigned ' + (res && res.updated != null ? res.updated : ids.length) + ' ticket(s).');
-  }).assignQuestionsBulk(ids, assignee, currentUser.email);
+  }).assignQuestionsBulk(ids, assignee, currentUser.email, notes.trim());
 }
 
 function openAnswerModal(ticketId) {
@@ -2176,6 +2196,11 @@ function openAnswerModal(ticketId) {
   document.getElementById('amodal-asked').innerText = getUserDisplayName(q.askedBy);
   document.getElementById('amodal-meta').innerText = 'waiting ' + q.hoursElapsed + ' hrs · ' + normalizePriority(q.priority);
   document.getElementById('modal-question-text').innerHTML = q.question || '—';
+  
+  const notesC = document.getElementById('modal-notes-container');
+  const notesEl = document.getElementById('modal-notes-text');
+  if (q.assignNotes) { notesEl.innerText = q.assignNotes; notesC.classList.remove('hidden'); }
+  else { notesC.classList.add('hidden'); }
   
   const modalEditor = document.getElementById('modal-answer-input');
   modalEditor.innerHTML = '';
@@ -2258,13 +2283,16 @@ async function submitModalAssign() {
     await customAlert('Please choose a supervisor to assign this question to.');
     return;
   }
+  const assigneeName = getUserDisplayName(assigneeEmail);
+  const notes = await customPrompt('Assign this question to ' + assigneeName + '? You can add an optional note for them (shown in the question detail).', { placeholder: 'Optional note...', okLabel: 'Assign' });
+  if (notes === null) return;
   google.script.run.withFailureHandler(err => {
     showToast('Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     closeAnswerModal();
     refreshData();
     showToast('Question assigned successfully!');
-  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email);
+  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email, notes.trim());
 }
 
 // ============================================================================
