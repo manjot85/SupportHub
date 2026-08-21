@@ -1,4 +1,5 @@
 // ============================================================================
+// Start
 // SUPPORT HUB — Code.gs (clean rewrite, Option A)
 // Compatible with your existing sheets: "Questions Tracker", "Answered",
 // "Team Setup" (same columns, nothing reshuffled). Adds two new sheets that
