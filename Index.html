@@ -314,10 +314,10 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Quick Filters</p>
 
 <!-- "All" Filter Card - Smaller, Full Width, Prominent -->
-<button id="sup-kpi-card-all" onclick="supKpiClick('all')" class="relative w-full bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-2 text-center hover:border-slate-400 hover:shadow-md transition-all duration-150 group mb-2.5">
-<span id="sup-kpi-badge-all" class="hidden absolute -top-2 -right-2 bg-slate-700 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
-<p class="text-[9px] font-bold uppercase tracking-wider text-slate-600/80 group-hover:text-slate-700">All Tickets</p>
-<p id="sup-kpi-all" class="text-base font-bold text-slate-800 mt-0.5">0</p>
+<button id="sup-kpi-card-all" onclick="supKpiClick('all')" class="relative w-full bg-white rounded-lg border border-slate-200 shadow-sm py-1.5 px-3 text-center hover:border-slate-300 hover:shadow transition-all duration-150 group mb-3">
+<span id="sup-kpi-badge-all" class="hidden absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
+<p class="text-[10px] font-bold uppercase tracking-wider text-slate-600 group-hover:text-slate-700">All Tickets</p>
+<p id="sup-kpi-all" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
 </button>
 
 <div class="grid grid-cols-2 gap-2.5">
@@ -2314,7 +2314,7 @@ function supKpiClick(kind) {
 
 function refreshSupQuickFilterStyles() {
   const styleByKind = {
-    all: { active: 'ring-4 ring-slate-400 border-slate-500 bg-slate-100 shadow-md scale-[1.02]', label: 'text-slate-800', count: 'text-slate-900' },
+    all: { active: 'border-blue-500 border-2 shadow-md', label: 'text-blue-700', count: 'text-blue-900' },
     unassigned: { active: 'ring-4 ring-amber-300 border-amber-400 bg-amber-50 shadow-md scale-[1.02]', label: 'text-amber-700', count: 'text-amber-900' },
     'mine-active': { active: 'ring-4 ring-emerald-300 border-emerald-400 bg-emerald-50 shadow-md scale-[1.02]', label: 'text-emerald-700', count: 'text-emerald-900' },
     hold: { active: 'ring-4 ring-purple-300 border-purple-400 bg-purple-50 shadow-md scale-[1.02]', label: 'text-purple-700', count: 'text-purple-900' },
@@ -2328,24 +2328,24 @@ function refreshSupQuickFilterStyles() {
     if (!card) return;
     const active = supQuickFilter === kind;
     const baseClass = kind === 'all'
-      ? 'relative w-full bg-white rounded-xl border-2 shadow-sm p-2 text-center transition-all duration-150 group'
+      ? 'relative w-full bg-white rounded-lg shadow-sm py-1.5 px-3 text-center transition-all duration-150 group'
       : 'relative bg-white rounded-xl border-2 shadow-sm p-3 text-left transition-all duration-150 group';
     card.className = baseClass + ' ' +
-      (active ? styleByKind[kind].active : (kind === 'all' ? 'border-slate-200/80 hover:border-slate-400 hover:shadow-md' :
+      (active ? styleByKind[kind].active : (kind === 'all' ? 'border border-slate-200 hover:border-slate-300 hover:shadow' :
         (kind === 'unassigned' ? 'border-slate-200/80 hover:border-amber-300 hover:shadow-md' :
         kind === 'mine-active' ? 'border-slate-200/80 hover:border-emerald-300 hover:shadow-md' :
         kind === 'hold' ? 'border-slate-200/80 hover:border-purple-300 hover:shadow-md' :
         'border-slate-200/80 hover:border-indigo-300 hover:shadow-md')));
     if (badge) badge.classList.toggle('hidden', !active);
     const labelEl = card.querySelector('p:first-of-type');
-    if (labelEl && active) labelEl.className = 'text-[9px] font-bold uppercase tracking-wider ' + styleByKind[kind].label;
-    else if (labelEl && kind === 'all') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-slate-600/80 group-hover:text-slate-700';
+    if (labelEl && active) labelEl.className = 'text-[10px] font-bold uppercase tracking-wider ' + styleByKind[kind].label;
+    else if (labelEl && kind === 'all') labelEl.className = 'text-[10px] font-bold uppercase tracking-wider text-slate-600 group-hover:text-slate-700';
     else if (labelEl && kind === 'unassigned') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-amber-600/80 group-hover:text-amber-600';
     else if (labelEl && kind === 'mine-active') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-emerald-600/80 group-hover:text-emerald-600';
     else if (labelEl && kind === 'hold') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-purple-600/80 group-hover:text-purple-600';
     else if (labelEl) labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-indigo-600/80 group-hover:text-indigo-600';
-    if (countEl && active) countEl.className = (kind === 'all' ? 'text-base' : 'text-xl') + ' font-bold mt-0.5 ' + styleByKind[kind].count;
-    else if (countEl) countEl.className = (kind === 'all' ? 'text-base' : 'text-xl') + ' font-bold text-slate-800 mt-0.5';
+    if (countEl && active) countEl.className = (kind === 'all' ? 'text-lg' : 'text-xl') + ' font-bold mt-0.5 ' + styleByKind[kind].count;
+    else if (countEl) countEl.className = (kind === 'all' ? 'text-lg' : 'text-xl') + ' font-bold text-slate-800 mt-0.5';
   });
 }
 
