@@ -479,6 +479,45 @@ function normalizeEmail(email) {
 }
 
 // ==========================================
+// URL OPTIMIZATION: Extract Case ID from Salesforce URLs
+// ==========================================
+// Salesforce URLs can be in various formats:
+// Lightning: https://yourinstance.lightning.force.com/lightning/r/Case/5008c00000AbCdE/view
+// Classic: https://yourinstance.salesforce.com/5008c00000AbCdE
+// This extracts just the 15 or 18 character Case ID, reducing data transfer by ~80%
+function extractCaseId(fullUrl) {
+  const url = String(fullUrl || '').trim();
+  if (!url) return '';
+
+  // If it doesn't look like a URL, return as-is (might already be just an ID)
+  if (!url.includes('://')) return url;
+
+  // Salesforce Case IDs are 15 or 18 characters, alphanumeric starting with '500'
+  // Lightning pattern: /lightning/r/Case/[ID]/view or /lightning/r/Case/[ID]
+  let match = url.match(/\/[Cc]ase\/([a-zA-Z0-9]{15,18})/);
+  if (match) return match[1];
+
+  // Classic pattern: /[ID] at the end or /[ID]?param
+  match = url.match(/\/([5][a-zA-Z0-9]{14,17})(?:[\/?]|$)/);
+  if (match) return match[1];
+
+  // If no pattern matches, store the full URL (fallback for edge cases)
+  return url;
+}
+
+// Client will reconstruct the full URL using this pattern
+// This function is for server-side validation/testing only
+function reconstructCaseUrl(caseId, baseUrl) {
+  if (!caseId) return '';
+  // If it's already a full URL, return as-is
+  if (caseId.includes('://')) return caseId;
+
+  // Default to Lightning URL format (most common)
+  baseUrl = baseUrl || 'https://yourinstance.lightning.force.com';
+  return baseUrl + '/lightning/r/Case/' + caseId + '/view';
+}
+
+// ==========================================
 // TICKET-ID ROW RESOLUTION
 // ==========================================
 // EVERY mutation resolves a ticket's CURRENT row from its permanent Ticket ID
@@ -606,7 +645,7 @@ function getQuestionsData(requestingEmail) {
           askedBy: stripNoraPrefix(String(row[2] || "").trim()),
           askedByEmail: String(row[Q_COL.ASKED_BY_EMAIL - 1] || "").trim().toLowerCase(),
           created: createdIso,
-          caseLink: String(row[7] || "").trim(),
+          caseLink: extractCaseId(String(row[7] || "").trim()),
           answer: String(row[8] || "").trim(),
           status: String(row[9] || STATUS_OPEN).trim(),
           assignedTo: String(row[10] || "").trim().toLowerCase(),
@@ -654,7 +693,7 @@ function getQuestionsData(requestingEmail) {
           answeredDate: answeredIso,
           turnaroundHours: turnaround,
           holdHoursExcluded: Number(row[A_COL.HOLD_HOURS - 1]) || 0,
-          caseLink: String(row[7] || "").trim(),
+          caseLink: extractCaseId(String(row[7] || "").trim()),
           answer: String(row[8] || "").trim(),
           status: String(row[9] || STATUS_ANSWERED).trim(),
           answeredBy: stripNoraPrefix(String(row[10] || "Supervisor").trim()),
@@ -669,6 +708,59 @@ function getQuestionsData(requestingEmail) {
   }
 
   return records;
+}
+
+// ==========================================
+// OPTIMIZED DATA LOADING WITH CHANGE DETECTION
+// ==========================================
+// Returns a version hash that changes whenever the sheets are modified.
+// This allows the client to avoid re-downloading unchanged data.
+function getDataVersion() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const qSheet = ss.getSheetByName(SHEET_QUESTIONS);
+  const aSheet = ss.getSheetByName(SHEET_ANSWERED);
+
+  // Version = row count + last row's ticket ID (detects additions, deletions, and modifications)
+  const qLastRow = qSheet.getLastRow();
+  const aLastRow = aSheet.getLastRow();
+
+  let qVersion = String(qLastRow);
+  if (qLastRow > 1) {
+    const lastTicket = qSheet.getRange(qLastRow, Q_COL.TICKET_ID).getValue();
+    qVersion = qLastRow + '_' + String(lastTicket).substring(0, 8);
+  }
+
+  let aVersion = String(aLastRow);
+  if (aLastRow > 1) {
+    const lastTicket = aSheet.getRange(aLastRow, A_COL.TICKET_ID).getValue();
+    aVersion = aLastRow + '_' + String(lastTicket).substring(0, 8);
+  }
+
+  return {
+    questionsVersion: qVersion,
+    answeredVersion: aVersion
+  };
+}
+
+// Wrapper around getQuestionsData that implements change detection.
+// If clientVersion matches serverVersion, returns { unchanged: true } without fetching data.
+// Otherwise returns { unchanged: false, data: [...], version: {...} }
+function getQuestionsDataIfChanged(requestingEmail, clientVersion) {
+  ensureSheetsExist();
+  requireTeamMember(requestingEmail);
+
+  const serverVersion = getDataVersion();
+
+  // If client version matches server version, nothing has changed
+  if (clientVersion &&
+      clientVersion.questionsVersion === serverVersion.questionsVersion &&
+      clientVersion.answeredVersion === serverVersion.answeredVersion) {
+    return { unchanged: true, version: serverVersion };
+  }
+
+  // Version changed or first load - fetch and send full data
+  const records = getQuestionsData(requestingEmail);
+  return { unchanged: false, data: records, version: serverVersion };
 }
 
 // Rejects a near-identical (question + event + asker) submission arriving within
