@@ -312,6 +312,14 @@ Mark as Urgent Escalation (Forces Top Priority P1)
      re-renders via refreshSupQuickFilterStyles(), called on every render. -->
 <div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3">
 <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Quick Filters</p>
+
+<!-- "All" Filter Card - Smaller, Full Width, Prominent -->
+<button id="sup-kpi-card-all" onclick="supKpiClick('all')" class="relative w-full bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-2 text-center hover:border-slate-400 hover:shadow-md transition-all duration-150 group mb-2.5">
+<span id="sup-kpi-badge-all" class="hidden absolute -top-2 -right-2 bg-slate-700 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
+<p class="text-[9px] font-bold uppercase tracking-wider text-slate-600/80 group-hover:text-slate-700">All Tickets</p>
+<p id="sup-kpi-all" class="text-base font-bold text-slate-800 mt-0.5">0</p>
+</button>
+
 <div class="grid grid-cols-2 gap-2.5">
 <button id="sup-kpi-card-unassigned" onclick="supKpiClick('unassigned')" class="relative bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-3 text-left hover:border-amber-300 hover:shadow-md transition-all duration-150 group">
 <span id="sup-kpi-badge-unassigned" class="hidden absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
@@ -2287,33 +2295,57 @@ function populateFilterDropdowns() {
 // thing at a time; combining filters deliberately still works via "More
 // filters" below, which is the explicit multi-filter tool.
 function supKpiClick(kind) {
-  supQuickFilter = (supQuickFilter === kind) ? 'all' : kind;
+  // If clicking the same filter again, or clicking "all", clear to show all
+  if (supQuickFilter === kind || kind === 'all') {
+    supQuickFilter = 'all';
+  } else {
+    supQuickFilter = kind;
+  }
+
+  // Clear assignee filter when applying quick filter (except for "all")
   if (supQuickFilter !== 'all') {
     const assigneeSel = document.getElementById('sup-filter-assignee');
     if (assigneeSel) assigneeSel.value = '';
   }
+
   refreshSupQuickFilterStyles();
   renderSupervisorDesk();
 }
 
 function refreshSupQuickFilterStyles() {
   const styleByKind = {
+    all: { active: 'ring-4 ring-slate-400 border-slate-500 bg-slate-100 shadow-md scale-[1.02]', label: 'text-slate-800', count: 'text-slate-900' },
     unassigned: { active: 'ring-4 ring-amber-300 border-amber-400 bg-amber-50 shadow-md scale-[1.02]', label: 'text-amber-700', count: 'text-amber-900' },
     'mine-active': { active: 'ring-4 ring-emerald-300 border-emerald-400 bg-emerald-50 shadow-md scale-[1.02]', label: 'text-emerald-700', count: 'text-emerald-900' },
     hold: { active: 'ring-4 ring-purple-300 border-purple-400 bg-purple-50 shadow-md scale-[1.02]', label: 'text-purple-700', count: 'text-purple-900' },
     followup: { active: 'ring-4 ring-indigo-300 border-indigo-400 bg-indigo-50 shadow-md scale-[1.02]', label: 'text-indigo-700', count: 'text-indigo-900' }
   };
-  const countElByKind = { unassigned: 'sup-kpi-unassigned', 'mine-active': 'sup-kpi-mine', hold: 'sup-kpi-hold', followup: 'sup-kpi-followup' };
+  const countElByKind = { all: 'sup-kpi-all', unassigned: 'sup-kpi-unassigned', 'mine-active': 'sup-kpi-mine', hold: 'sup-kpi-hold', followup: 'sup-kpi-followup' };
   Object.keys(styleByKind).forEach(kind => {
     const card = document.getElementById('sup-kpi-card-' + kind);
     const badge = document.getElementById('sup-kpi-badge-' + kind);
     const countEl = document.getElementById(countElByKind[kind]);
     if (!card) return;
     const active = supQuickFilter === kind;
-    card.className = 'relative bg-white rounded-xl border-2 shadow-sm p-3 text-left transition-all duration-150 group ' +
-      (active ? styleByKind[kind].active : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md');
+    const baseClass = kind === 'all'
+      ? 'relative w-full bg-white rounded-xl border-2 shadow-sm p-2 text-center transition-all duration-150 group'
+      : 'relative bg-white rounded-xl border-2 shadow-sm p-3 text-left transition-all duration-150 group';
+    card.className = baseClass + ' ' +
+      (active ? styleByKind[kind].active : (kind === 'all' ? 'border-slate-200/80 hover:border-slate-400 hover:shadow-md' :
+        (kind === 'unassigned' ? 'border-slate-200/80 hover:border-amber-300 hover:shadow-md' :
+        kind === 'mine-active' ? 'border-slate-200/80 hover:border-emerald-300 hover:shadow-md' :
+        kind === 'hold' ? 'border-slate-200/80 hover:border-purple-300 hover:shadow-md' :
+        'border-slate-200/80 hover:border-indigo-300 hover:shadow-md')));
     if (badge) badge.classList.toggle('hidden', !active);
-    if (countEl) countEl.className = 'text-xl font-bold mt-0.5 ' + (active ? styleByKind[kind].count : 'text-slate-800');
+    const labelEl = card.querySelector('p:first-of-type');
+    if (labelEl && active) labelEl.className = 'text-[9px] font-bold uppercase tracking-wider ' + styleByKind[kind].label;
+    else if (labelEl && kind === 'all') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-slate-600/80 group-hover:text-slate-700';
+    else if (labelEl && kind === 'unassigned') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-amber-600/80 group-hover:text-amber-600';
+    else if (labelEl && kind === 'mine-active') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-emerald-600/80 group-hover:text-emerald-600';
+    else if (labelEl && kind === 'hold') labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-purple-600/80 group-hover:text-purple-600';
+    else if (labelEl) labelEl.className = 'text-[9px] font-bold uppercase tracking-wider text-indigo-600/80 group-hover:text-indigo-600';
+    if (countEl && active) countEl.className = (kind === 'all' ? 'text-base' : 'text-xl') + ' font-bold mt-0.5 ' + styleByKind[kind].count;
+    else if (countEl) countEl.className = (kind === 'all' ? 'text-base' : 'text-xl') + ' font-bold text-slate-800 mt-0.5';
   });
 }
 
@@ -2359,6 +2391,7 @@ function renderSupervisorDesk() {
   // Top KPI Numbers. Unassigned counts every unassigned ticket regardless of
   // priority - assignment status takes precedence over urgency here, same as
   // the grouping below.
+  document.getElementById('sup-kpi-all').innerText = open.length;
   document.getElementById('sup-kpi-unassigned').innerText = open.filter(q => !q.assignedTo && q.status !== 'Hold').length;
   document.getElementById('sup-kpi-mine').innerText = open.filter(q => q.assignedTo === me && q.status !== 'Hold').length;
   document.getElementById('sup-kpi-hold').innerText = open.filter(q => q.status === 'Hold').length;
