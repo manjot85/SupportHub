@@ -6,7 +6,18 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 .table-fixed-layout { table-layout: fixed; width: 100%; }
-.preserve-lines { white-space: pre-wrap; word-break: break-word; }
+.preserve-lines { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+/* Belt-and-suspenders: some rendered content (case links, ticket IDs, rich-text
+   answers with pasted URLs) can contain long unbroken strings. overflow-wrap:
+   anywhere forces a break rather than pushing the modal/page wider than the
+   viewport. Applied both to the free-text containers directly and to any
+   inserted <a> tags inside them, since links don't always inherit it reliably
+   across browsers. */
+.wrap-anywhere, .preserve-lines, .rich-editor-content { overflow-wrap: anywhere; word-break: break-word; }
+.wrap-anywhere a, .preserve-lines a, .rich-editor-content a { overflow-wrap: anywhere; word-break: break-word; }
+/* Safety net: even if something unexpected still overflows, clip it at the
+   page level instead of letting the whole app shift/scroll horizontally. */
+body { overflow-x: hidden; }
 .sup-row { transition: background-color .15s ease; }
 .sup-row:hover { background-color: #f8fafc; }
 .rich-editor-content { min-height: 90px; outline: none; }
@@ -159,6 +170,10 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <option value="P3">P3 Medium</option>
 <option value="P4">P4 Normal</option>
 </select>
+<select id="coord-updates-filter" onchange="renderCoordinatorQuestions()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
+<option value="ALL">All Tickets</option>
+<option value="UPDATES">Has Updates Only</option>
+</select>
 <input type="date" id="coord-date-filter" onchange="renderCoordinatorQuestions()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
 </div>
 </div>
@@ -171,7 +186,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <th class="p-3 w-28 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','created')">SUBMITTED<span id="sort-arrow-coord-created"></span></th>
 <th class="p-3 w-36 cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','eventName')">EVENT<span id="sort-arrow-coord-eventName"></span></th>
 <th class="p-3">QUESTION</th>
-<th class="p-3 w-28 text-center cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','status')">STATUS<span id="sort-arrow-coord-status"></span></th>
+<th class="p-3 w-32 text-center cursor-pointer select-none hover:text-slate-700" onclick="onSortHeaderClick('coord','status')">STATUS<span id="sort-arrow-coord-status"></span></th>
 <th class="p-3 w-28 text-right">ACTION</th>
 </tr>
 </thead>
@@ -269,62 +284,131 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 </section>
 
 <!-- TAB 4: SUPERVISOR DESK -->
-<section id="view-supervisor" class="hidden space-y-4">
+<!-- This tab intentionally breaks out of the app's max-w-7xl content column
+     (w-screen + left-1/2 -translate-x-1/2 recenters a full-viewport-width box
+     under an otherwise-centered parent) so the ticket queue can use the full
+     page width instead of being capped at 1280px, while the sidebar keeps a
+     fixed, comfortable width. body has overflow-x:hidden as a safety net for
+     the 100vw-vs-scrollbar rounding some browsers introduce. -->
+<section id="view-supervisor" class="hidden">
+<div class="w-screen relative left-1/2 -translate-x-1/2 px-4 md:px-6 lg:px-8">
+<div class="flex flex-col lg:flex-row gap-4 items-start" id="sup-desk-flex">
 
-<!-- COMPACT KPI SUMMARY STRIP -->
-<div class="grid grid-cols-2 md:grid-cols-5 gap-2">
-<button onclick="supKpiClick('p1')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-rose-300 transition group">
-<p class="text-[9px] font-bold uppercase tracking-wider text-rose-600/80 group-hover:text-rose-600">P1 Urgent</p>
-<p id="sup-kpi-p1" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
-</button>
-<button onclick="supKpiClick('unassigned')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-amber-300 transition group">
+<!-- SIDEBAR COLUMN: quick filters, workload, search/filter controls. Sticky on
+     large screens so it stays reachable while the (often long) queue below
+     scrolls independently. Width is user-resizable (drag handle) and the
+     whole column can be collapsed via the Hide button - both states persist
+     across sessions via localStorage. On mobile it always renders full width
+     and the resize/collapse controls are hidden (not meaningful <lg). -->
+<div id="sup-sidebar-col" class="w-full lg:shrink-0 lg:sticky lg:top-[104px] lg:z-10 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto lg:pb-4">
+<aside class="space-y-4">
+
+<!-- QUICK-FILTER KPI CARDS -->
+<!-- Each card IS the filter control (single source of truth - no separate
+     scope buttons / chips duplicating what these already do). Click to
+     apply, click again to clear back to "All Queue". Active card gets a
+     bold colored ring + scale-up + an "Active" badge so it's unmistakable
+     which quick filter (if any) is applied - this state persists across
+     re-renders via refreshSupQuickFilterStyles(), called on every render. -->
+<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3">
+<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Quick Filters</p>
+<div class="grid grid-cols-2 gap-2.5">
+<button id="sup-kpi-card-unassigned" onclick="supKpiClick('unassigned')" class="relative bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-3 text-left hover:border-amber-300 hover:shadow-md transition-all duration-150 group">
+<span id="sup-kpi-badge-unassigned" class="hidden absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
 <p class="text-[9px] font-bold uppercase tracking-wider text-amber-600/80 group-hover:text-amber-600">Unassigned</p>
-<p id="sup-kpi-unassigned" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+<p id="sup-kpi-unassigned" class="text-xl font-bold text-slate-800 mt-0.5">0</p>
 </button>
-<button onclick="supKpiClick('mine-active')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-emerald-300 transition group">
+<button id="sup-kpi-card-mine-active" onclick="supKpiClick('mine-active')" class="relative bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-3 text-left hover:border-emerald-300 hover:shadow-md transition-all duration-150 group">
+<span id="sup-kpi-badge-mine-active" class="hidden absolute -top-2 -right-2 bg-emerald-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
 <p class="text-[9px] font-bold uppercase tracking-wider text-emerald-600/80 group-hover:text-emerald-600">Assigned to Me (Active)</p>
-<p id="sup-kpi-mine" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+<p id="sup-kpi-mine" class="text-xl font-bold text-slate-800 mt-0.5">0</p>
 </button>
-<button onclick="supKpiClick('hold')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-purple-300 transition group">
+<button id="sup-kpi-card-hold" onclick="supKpiClick('hold')" class="relative bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-3 text-left hover:border-purple-300 hover:shadow-md transition-all duration-150 group">
+<span id="sup-kpi-badge-hold" class="hidden absolute -top-2 -right-2 bg-purple-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
 <p class="text-[9px] font-bold uppercase tracking-wider text-purple-600/80 group-hover:text-purple-600">On Hold</p>
-<p id="sup-kpi-hold" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+<p id="sup-kpi-hold" class="text-xl font-bold text-slate-800 mt-0.5">0</p>
 </button>
-<button onclick="supKpiClick('followup')" class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2.5 text-left hover:border-indigo-300 transition group">
+<button id="sup-kpi-card-followup" onclick="supKpiClick('followup')" class="relative bg-white rounded-xl border-2 border-slate-200/80 shadow-sm p-3 text-left hover:border-indigo-300 hover:shadow-md transition-all duration-150 group">
+<span id="sup-kpi-badge-followup" class="hidden absolute -top-2 -right-2 bg-indigo-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm">Active</span>
 <p class="text-[9px] font-bold uppercase tracking-wider text-indigo-600/80 group-hover:text-indigo-600">Follow-Ups</p>
-<p id="sup-kpi-followup" class="text-lg font-bold text-slate-800 mt-0.5">0</p>
+<p id="sup-kpi-followup" class="text-xl font-bold text-slate-800 mt-0.5">0</p>
 </button>
 </div>
-
-<!-- WORKLOAD BREAKDOWN STRIP -->
-<div id="sup-workload-strip" class="bg-white rounded-xl border border-slate-200/80 p-2.5 shadow-sm text-xs flex flex-wrap items-center gap-2">
-<span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider shrink-0">Assigned Workload:</span>
-<div id="sup-workload-pills" class="flex flex-wrap items-center gap-1.5 flex-1"></div>
 </div>
 
-<!-- FILTER / ACTION BAR -->
-<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3 sticky top-[104px] z-30">
-<div class="flex flex-wrap items-center gap-2">
-<div class="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-semibold">
-<button id="sup-scope-all" onclick="setSupScope('all')" class="px-3 py-1.5 bg-slate-900 text-white">All Queue</button>
-<button id="sup-scope-mine-all" onclick="setSupScope('mine-all')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Mine (All)</button>
-<button id="sup-scope-mine-active" onclick="setSupScope('mine-active')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Mine (Active)</button>
-<button id="sup-scope-unassigned" onclick="setSupScope('unassigned')" class="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50">Unassigned</button>
+<!-- TEAM WORKLOAD -->
+<!-- Pills are themselves clickable "assigned to" filters (same effect as
+     picking that person from the Assigned To dropdown below) so there's one
+     way to filter by workload, not two. Sorted busiest-first. Who shows up
+     here is customizable via "Edit" (defaults to hiding placeholder/test
+     accounts like "Admin User" - see supWorkloadHidden in the script). -->
+<div id="sup-workload-strip" class="bg-white rounded-xl border border-slate-200/80 p-3 shadow-sm">
+<div class="flex items-center justify-between">
+<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Team Workload</p>
+<button onclick="toggleSupWorkloadEdit()" id="sup-workload-edit-btn" class="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-emerald-600 transition" title="Choose who appears here">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+<span>Edit</span>
+</button>
 </div>
-<input type="text" id="sup-search" oninput="renderSupervisorDesk()" placeholder="Search queue..." class="border border-slate-200 px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[140px]">
-<button id="sup-chip-p1" onclick="toggleSupChip('p1')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">P1</button>
-<button id="sup-chip-hold" onclick="toggleSupChip('hold')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">Hold</button>
-<button id="sup-chip-followup" onclick="toggleSupChip('followup')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 text-slate-600 hover:bg-slate-50">Follow-Up</button>
-<button onclick="toggleSupMore()" id="sup-more-btn" class="px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-500 hover:text-slate-800 underline">More filters</button>
-<button onclick="clearSupFilters()" class="px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-rose-600">Reset</button>
+<p class="text-[10px] text-slate-400 mt-0.5 mb-2.5">Click a name to filter, click again to clear</p>
+<div id="sup-workload-pills" class="flex flex-wrap items-center gap-2"></div>
+<div id="sup-workload-edit-panel" class="hidden mt-3 pt-3 border-t border-slate-100 space-y-1.5 max-h-48 overflow-y-auto"></div>
 </div>
-<div id="sup-more-panel" class="hidden mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
-<select id="sup-filter-askedby" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+
+<!-- FILTER CONTROLS -->
+<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3">
+<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Filter Queue</p>
+<div class="space-y-2">
+<select id="sup-filter-priority" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
+<option value="ALL">All Priorities</option>
+<option value="P1">P1 Urgent</option>
+<option value="P2">P2 High</option>
+<option value="P3">P3 Medium</option>
+<option value="P4">P4 Normal</option>
+</select>
+<select id="sup-filter-askedby" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
 <option value="">Asked by: anyone</option>
 </select>
-<select id="sup-filter-assignee" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+<select id="sup-filter-assignee" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
 <option value="">Assigned to: anyone</option>
 </select>
-<input type="date" id="sup-filter-date" onchange="renderSupervisorDesk()" class="border border-slate-200 px-2 py-1 rounded-lg text-xs outline-none text-slate-600">
+<input type="date" id="sup-filter-date" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
+<button onclick="clearSupFilters()" class="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200/60 transition">Reset all filters</button>
+</div>
+</div>
+
+</aside>
+</div>
+
+<!-- DIVIDER: drag left/right to resize the sidebar column, and doubles as
+     the single collapse/expand control (previously there were two separate
+     toggles - one in the sidebar header, one here; this is the one that
+     made more sense to keep, since it sits right where the sidebar meets
+     the queue). Desktop-only (lg+); on mobile the sidebar always renders
+     full-width, stacked above the queue, so neither applies. The track is
+     a full-height, clearly-colored bar (not just a faint hover sliver) so
+     it reads as draggable at a glance; the toggle button stays visible and
+     sticky even while collapsed, so it's always reachable. -->
+<div id="sup-resize-handle" class="hidden lg:flex relative w-4 shrink-0 self-stretch items-start justify-center group select-none">
+<div id="sup-resize-handle-track" onmousedown="startSupSidebarResize(event)" class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1.5 rounded-full bg-slate-300 group-hover:bg-emerald-400 active:bg-emerald-500 transition-colors cursor-col-resize" title="Drag to resize sidebar"></div>
+<button id="sup-sidebar-toggle-btn" onclick="toggleSupSidebar()" class="sticky top-[112px] z-10 mt-1 w-6 h-6 flex items-center justify-center bg-white border border-slate-300 rounded-full shadow-md text-slate-500 hover:text-emerald-600 hover:border-emerald-400 transition" title="Hide sidebar">
+<svg id="sup-sidebar-toggle-icon" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+</button>
+</div>
+
+<!-- MAIN CONTENT: bulk bar + grouped queue. flex-1 so it fills the rest of
+     the now-full-width page, independent of the sidebar's (resizable)
+     width - and reclaims the sidebar's space entirely when it's hidden. -->
+<div class="flex-1 min-w-0 space-y-4 w-full lg:w-0">
+
+<!-- QUEUE SEARCH BAR: moved here from the sidebar so it sits right above the
+     results it filters. Same #sup-search id/input, oninput handler
+     unchanged - only its position in the DOM moved, so all existing filter
+     logic in renderSupervisorDesk() keeps working as-is. -->
+<div class="bg-white rounded-xl border border-slate-200/80 shadow-sm p-3">
+<div class="relative">
+<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path></svg>
+<input type="text" id="sup-search" oninput="renderSupervisorDesk()" placeholder="Search this queue by question, event, or asked by..." class="w-full border border-slate-200 pl-9 pr-3 py-2 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500">
 </div>
 </div>
 
@@ -338,6 +422,11 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- GROUPED QUEUE -->
 <div id="sup-groups" class="space-y-5"></div>
+
+</div>
+
+</div>
+</div>
 </section>
 
 <!-- TAB 5: REPORTING ANALYTICS -->
@@ -516,7 +605,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <div class="p-6 overflow-y-auto flex-1 min-h-0">
 <div id="modal-hold-banner" class="hidden mb-4 bg-purple-50/80 border border-purple-200/80 text-purple-900 rounded-xl p-3 text-xs">
 <p class="font-bold uppercase text-[10px] tracking-wider text-purple-700 mb-1">On Hold Reason</p>
-<p id="modal-hold-reason" class="font-medium break-words text-purple-900/90"></p>
+<div id="modal-hold-reason" class="font-medium preserve-lines text-purple-900/90"></div>
 </div>
 
 <div class="space-y-4">
@@ -532,7 +621,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <div id="modal-link-container" class="min-w-0">
 <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Case / Event Link</label>
-<a id="modal-case-link" href="#" target="_blank" class="text-xs font-semibold text-blue-600 underline break-all"></a>
+<a id="modal-case-link" href="#" target="_blank" class="text-xs font-semibold text-blue-600 underline break-all wrap-anywhere"></a>
 </div>
 
 <div class="relative">
@@ -696,8 +785,13 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 This ticket has not been answered yet.
 </div>
 
+<div id="tdmodal-hold-banner" class="hidden bg-purple-50/80 border border-purple-200/80 text-purple-900 rounded-xl p-3 text-xs">
+<p class="font-bold uppercase text-[10px] tracking-wider text-purple-700 mb-1">On Hold Reason</p>
+<div id="tdmodal-hold-reason" class="font-medium preserve-lines text-purple-900/90"></div>
+</div>
+
 <div id="tdmodal-notes-container" class="hidden">
-<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assignment Notes</label>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assignment Notes / Activity Log</label>
 <div id="tdmodal-notes" class="preserve-lines bg-blue-50/60 border border-blue-200/80 text-slate-700 p-3.5 rounded-xl text-xs leading-relaxed break-words"></div>
 </div>
 
@@ -734,8 +828,10 @@ let currentReportType = 'unanswered';
 let reportBreakdownSort = { col: 'count', dir: 'desc' };
 
 // Supervisor Desk state
-let supScope = 'all'; // 'all', 'mine-all', 'mine-active', 'unassigned'
-let supChips = { p1: false, hold: false, followup: false };
+// Single quick-filter state (was previously split across supScope + supChips,
+// which duplicated the KPI cards with a second row of scope/chip buttons -
+// the KPI cards ARE the filter now, so there's exactly one selected value).
+let supQuickFilter = 'all'; // 'all' | 'unassigned' | 'mine-active' | 'hold' | 'followup'
 let supSelected = new Set();
 
 const sortState = {
@@ -936,11 +1032,32 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Client-side mirror of Code.gs's stripNoraPrefix. Kept in sync deliberately:
+// some Team Setup names carry a leading brand-prefix token ("Nora") that is
+// not part of the person's real name (e.g. "Nora - Alice Smith", "Nora Alice
+// Smith"). The server already strips this, but this client-side copy is
+// belt-and-suspenders so that (a) a stale/older Apps Script deployment can't
+// silently leak the raw prefixed name into the UI, and (b) any comparison
+// between a roster name and a name string stored on an older ticket record
+// stays correct even if one side has the prefix and the other doesn't.
+function stripNoraPrefix(name) {
+  const raw = String(name == null ? '' : name).trim();
+  const cleaned = raw.replace(/^Nora[\s\-_:/]*/i, '').trim();
+  return cleaned || raw;
+}
+
+// Normalizes every member's display name in-place after any team fetch, so
+// currentUser.name, the login dropdown, mentions, and filters are always
+// consistent no matter what's actually stored server-side.
+function normalizeTeamMembers(list) {
+  return (list || []).map(m => Object.assign({}, m, { name: stripNoraPrefix(m.name) }));
+}
+
 function getUserDisplayName(val) {
   if (!val) return '—';
   const cleanVal = String(val).trim().toLowerCase();
-  const match = teamMembers.find(m => m.email.toLowerCase() === cleanVal || m.name.toLowerCase() === cleanVal);
-  return match ? match.name : val;
+  const match = teamMembers.find(m => m.email.toLowerCase() === cleanVal || m.name.toLowerCase() === cleanVal || stripNoraPrefix(m.name).toLowerCase() === cleanVal);
+  return match ? match.name : stripNoraPrefix(val);
 }
 
 const SUPERVISOR_TITLES = ['Manager', 'Assistant Manager', 'Supervisor', 'Escalation Supervisor'];
@@ -965,9 +1082,9 @@ function findAskerTeamMember(q) {
     const byEmail = teamMembers.find(m => m.email.toLowerCase() === email);
     if (byEmail) return byEmail;
   }
-  const name = String(q.askedBy || '').trim().toLowerCase();
+  const name = stripNoraPrefix(String(q.askedBy || '').trim()).toLowerCase();
   if (!name) return null;
-  return teamMembers.find(m => m.name.toLowerCase() === name) || null;
+  return teamMembers.find(m => stripNoraPrefix(m.name).toLowerCase() === name) || null;
 }
 function isAskedBySupport(q) {
   const member = findAskerTeamMember(q);
@@ -1009,14 +1126,98 @@ function waitColorClass(hours) {
 function isOwnerOf(q) {
   if (!currentUser) return false;
   const uEmail = (currentUser.email || '').toLowerCase();
-  const uName = (currentUser.name || '').trim().toLowerCase();
   const qEmail = (q.askedByEmail || '').toLowerCase();
   if (qEmail) return qEmail === uEmail;
-  return (q.askedBy || '').trim().toLowerCase() === uName;
+  // Fallback for legacy tickets filed before the Asked By Email column
+  // existed: normalize both sides through stripNoraPrefix so a roster
+  // rebrand (name prefix added/removed after the ticket was submitted)
+  // doesn't silently break "my active questions" matching.
+  const uName = stripNoraPrefix(currentUser.name || '').trim().toLowerCase();
+  const qName = stripNoraPrefix(q.askedBy || '').trim().toLowerCase();
+  return qName === uName;
 }
 
-function showHoldReasonAlert(reason) {
+// Hold Reason is now a stamped, possibly multi-entry log ("[Put on hold by
+// NAME · DATE CST]: reason text", appended on each update). Full history is
+// fine in the detail modals (they use preserve-lines), but a compact
+// single-line summary (like the reporting table) should show only the most
+// recent reason, not the whole log.
+function latestHoldReasonText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  const entries = text.split(/\n\n+/).filter(Boolean);
+  const latest = entries[entries.length - 1] || text;
+  const idx = latest.indexOf(']: ');
+  return idx !== -1 ? latest.slice(idx + 3) : latest;
+}
+
+// Splits a Hold Reason string into structured entries so the "who put it on
+// hold, and when" can be shown as its own clearly-labeled line rather than
+// buried in a wall of text. Tickets held before this stamping existed won't
+// match the pattern - those fall back to showing the raw text with no
+// attribution line, instead of breaking.
+function parseHoldReasonEntries(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return [];
+  return text.split(/\n\n+/).filter(Boolean).map(chunk => {
+    const m = chunk.match(/^\[(Put on hold|Hold reason updated) by (.+?) · (.+?) CST\]: ([\s\S]*)$/);
+    if (m) return { updated: m[1] === 'Hold reason updated', author: m[2], stamp: m[3], text: m[4] };
+    return { updated: false, author: null, stamp: null, text: chunk };
+  });
+}
+
+// Renders those entries as HTML: a small "put on hold by X · date" line
+// above each reason, oldest first, with a divider between multiple entries
+// (e.g. the reason was edited while still on hold).
+function renderHoldReasonHtml(raw) {
+  const entries = parseHoldReasonEntries(raw);
+  if (!entries.length) return 'No reason provided.';
+  return entries.map(e => {
+    const attribution = e.author
+      ? '<div class="text-[10px] font-bold uppercase tracking-wide text-purple-600/90 mb-1">' +
+          (e.updated ? '🔄 Reason updated by ' : '⏸ Put on hold by ') + esc(e.author) + ' · ' + esc(e.stamp) + ' CST' +
+        '</div>'
+      : '';
+    return '<div class="mb-2.5 last:mb-0">' + attribution + '<div>' + esc(e.text) + '</div></div>';
+  }).join('<div class="border-t border-purple-200/70 my-2"></div>');
+}
+
+function showHoldReasonAlert(ticketId) {
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  const reason = q ? q.holdReason : '';
   customAlert('On Hold Reason:\n' + (reason || 'No reason provided.'));
+}
+
+// Returns true if a Questions-Tracker record has any supervisor/support
+// activity worth flagging to the coordinator who submitted it (on hold, or
+// an assignment note left by whoever is working the ticket).
+function questionHasUpdate(q) {
+  if (!q) return false;
+  const onHold = q.status === 'Hold';
+  const hasNotes = !!(q.assignNotes && q.assignNotes.trim());
+  return onHold || hasNotes;
+}
+
+// Pulls out the single most recent note/activity for a quick-glance popup.
+// Assignment notes are stored newest-last, separated by blank lines.
+function getLatestActivityText(q) {
+  const parts = [];
+  if (q.status === 'Hold') {
+    parts.push('On Hold Reason:\n' + (q.holdReason ? latestHoldReasonText(q.holdReason) : 'No reason provided.'));
+  }
+  if (q.assignNotes && q.assignNotes.trim()) {
+    const entries = q.assignNotes.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+    const latest = entries[entries.length - 1];
+    if (latest) parts.push('Latest Supervisor Note:\n' + latest);
+  }
+  if (!parts.length) return 'No updates yet on this ticket.';
+  return parts.join('\n\n');
+}
+
+function showLatestUpdateAlert(ticketId) {
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (!q) { showToast('This ticket could not be found. Refreshing...'); refreshData(); return; }
+  customAlert(getLatestActivityText(q));
 }
 
 // ============================================================================
@@ -1083,7 +1284,7 @@ window.onload = function() {
     new Date().toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' · CST';
   initCustomDialog();
   google.script.run.withSuccessHandler(team => {
-    teamMembers = team || [];
+    teamMembers = normalizeTeamMembers(team || []);
     populateLoginDropdown();
   }).getTeamMembers();
 };
@@ -1216,7 +1417,7 @@ function logoutToLogin() {
   document.getElementById('login-overlay').classList.remove('hidden');
 
   google.script.run.withSuccessHandler(team => {
-    teamMembers = team || [];
+    teamMembers = normalizeTeamMembers(team || []);
     populateLoginDropdown();
   }).getTeamMembers();
 }
@@ -1264,7 +1465,7 @@ function refreshData() {
   if (now - lastTeamFetch > TEAM_FETCH_INTERVAL_MS) {
     lastTeamFetch = now;
     google.script.run.withSuccessHandler(team => {
-      teamMembers = team || [];
+      teamMembers = normalizeTeamMembers(team || []);
       populateFilterDropdowns();
     }).getTeamMembers();
   }
@@ -1392,6 +1593,7 @@ async function handleQuestionSubmit(e) {
 function renderCoordinatorQuestions() {
   const search = (document.getElementById('coord-search').value || '').toLowerCase();
   const prioFilter = document.getElementById('coord-prio-filter').value;
+  const updatesFilter = document.getElementById('coord-updates-filter').value;
   const dateFilter = document.getElementById('coord-date-filter').value;
   const body = document.getElementById('coord-table-body');
   if (!body || !currentUser) return;
@@ -1403,13 +1605,14 @@ function renderCoordinatorQuestions() {
     const matchesSearch = q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search);
     const matchesPrio = prioFilter === 'ALL' || normalizePriority(q.priority) === prioFilter;
     const matchesDate = !dateFilter || cstDateString(q.created) === dateFilter;
-    return matchesSearch && matchesPrio && matchesDate;
+    const matchesUpdates = updatesFilter !== 'UPDATES' || questionHasUpdate(q);
+    return matchesSearch && matchesPrio && matchesDate && matchesUpdates;
   });
 
   const sorted = applySort(mine, 'coord');
 
   if (sorted.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No active questions. Submit one above!</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No active questions match the current filters.</td></tr>';
     return;
   }
 
@@ -1419,20 +1622,44 @@ function renderCoordinatorQuestions() {
       prio === 'P2' ? 'bg-orange-50 text-orange-700 border border-orange-200/60' :
       prio === 'P3' ? 'bg-amber-50 text-amber-700 border border-amber-200/60' : 'bg-slate-50 text-slate-600 border border-slate-200/60';
     const onHold = q.status === 'Hold';
-    const statusHtml = onHold
-      ? '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 cursor-pointer" onclick="showHoldReasonAlert(\'' + esc(q.holdReason) + '\')">On Hold</span>'
-      : '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>';
+    const hasNotes = !!(q.assignNotes && q.assignNotes.trim());
+    const hasUpdate = onHold || hasNotes;
+
+    let statusHtml;
+    if (onHold) {
+      statusHtml =
+        '<div class="flex flex-col items-center gap-1">' +
+          '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">On Hold</span>' +
+          '<button onclick="event.stopPropagation(); showLatestUpdateAlert(\'' + esc(q.ticketId) + '\')" class="text-[10px] text-purple-700 hover:text-purple-900 font-bold underline flex items-center gap-0.5">🔔 See Update</button>' +
+        '</div>';
+    } else if (hasNotes) {
+      statusHtml =
+        '<div class="flex flex-col items-center gap-1">' +
+          '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/60">In Progress</span>' +
+          '<button onclick="event.stopPropagation(); showLatestUpdateAlert(\'' + esc(q.ticketId) + '\')" class="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-0.5">🔔 See Update</button>' +
+        '</div>';
+    } else {
+      statusHtml = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>';
+    }
+
     const followTag = q.isFollowUp ? ' <span class="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60">Follow-Up</span>' : '';
 
+    // Highlight rows that have supervisor activity so they stand out from
+    // plain untouched "Open" tickets - purple for hold, indigo for notes.
+    let rowAccent = '';
+    if (onHold) rowAccent = 'bg-purple-50/40 border-l-4 border-purple-400';
+    else if (hasNotes) rowAccent = 'bg-indigo-50/30 border-l-4 border-indigo-400';
+
     const tr = document.createElement('tr');
-    tr.className = 'hover:bg-slate-50 transition';
+    tr.className = 'hover:bg-slate-100/70 transition cursor-pointer ' + rowAccent;
+    tr.onclick = (e) => { if (e.target.closest('button')) return; openTicketDetail(q.sheet, q.ticketId); };
     tr.innerHTML =
       '<td class="p-3"><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded ' + prioClass + '">' + prio + '</span></td>' +
       '<td class="p-3 text-slate-500">' + formatCSTDateTime(q.created, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</td>' +
       '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(q.eventName) + '</td>' +
       '<td class="p-3 text-slate-700 truncate">' + q.question + followTag + '</td>' +
       '<td class="p-3 text-center">' + statusHtml + '</td>' +
-      '<td class="p-3 text-right"><button onclick="addUpdateToQuestion(\'' + esc(q.ticketId) + '\')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">Add Info</button></td>';
+      '<td class="p-3 text-right"><button onclick="event.stopPropagation(); addUpdateToQuestion(\'' + esc(q.ticketId) + '\')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">Add Info</button></td>';
     body.appendChild(tr);
   });
 }
@@ -1696,7 +1923,7 @@ function renderAllTickets() {
 
 function openTicketDetail(sheet, ticketId) {
   const q = allQuestions.find(r => r.sheet === sheet && r.ticketId === ticketId);
-  if (!q) return;
+  if (!q) { showToast('This ticket could not be found. Refreshing...'); refreshData(); return; }
 
   const isAnswered = q.sheet === 'Answered';
   document.getElementById('tdmodal-event').innerText = q.eventName || '—';
@@ -1720,6 +1947,15 @@ function openTicketDetail(sheet, ticketId) {
   if (isAnswered) document.getElementById('tdmodal-answer').innerHTML = q.answer || '—';
   document.getElementById('tdmodal-by').innerText = isAnswered ? getUserDisplayName(q.answeredBy) : '—';
   document.getElementById('tdmodal-assigned').innerText = q.assignedTo ? getUserDisplayName(q.assignedTo) : '—';
+
+  // Hold reason banner - only meaningful for open tickets currently on hold.
+  const holdBanner = document.getElementById('tdmodal-hold-banner');
+  if (!isAnswered && q.status === 'Hold') {
+    document.getElementById('tdmodal-hold-reason').innerHTML = renderHoldReasonHtml(q.holdReason);
+    holdBanner.classList.remove('hidden');
+  } else {
+    holdBanner.classList.add('hidden');
+  }
 
   const notesC = document.getElementById('tdmodal-notes-container');
   const notesEl = document.getElementById('tdmodal-notes');
@@ -1838,8 +2074,166 @@ async function deleteRecord(sheet, ticketId) {
 // ============================================================================
 // TAB 4: SUPERVISOR DESK
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// SIDEBAR: resizable width + collapse/expand (desktop only, >=1024px).
+// Both settings persist in localStorage across sessions/reloads. On mobile
+// (<1024px) the sidebar always renders full width, stacked above the queue,
+// and these controls are inert - resizing/collapsing only makes sense once
+// the sidebar and queue sit side-by-side.
+// ----------------------------------------------------------------------------
+const SUP_SIDEBAR_MIN_WIDTH = 240;
+const SUP_SIDEBAR_MAX_WIDTH = 560;
+function getDefaultSupSidebarWidth() {
+  return window.innerWidth >= 1280 ? 384 : 320; // mirrors the old xl:w-96 / lg:w-80 defaults
+}
+let supSidebarWidth = parseInt(localStorage.getItem('supSidebarWidth'), 10) || getDefaultSupSidebarWidth();
+let supSidebarCollapsed = localStorage.getItem('supSidebarCollapsed') === '1';
+let supSidebarDragging = false;
+
+function isSupDesktopWidth() {
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
+
+const SUP_TOGGLE_ICON_COLLAPSE = 'M11 19l-7-7 7-7m8 14l-7-7 7-7'; // chevron-left: click to hide
+const SUP_TOGGLE_ICON_EXPAND = 'M13 5l7 7-7 7M5 5l7 7-7 7';       // chevron-right: click to show
+
+function applySupSidebarState() {
+  const col = document.getElementById('sup-sidebar-col');
+  const handleWrap = document.getElementById('sup-resize-handle');
+  const track = document.getElementById('sup-resize-handle-track');
+  const toggleBtn = document.getElementById('sup-sidebar-toggle-btn');
+  const toggleIcon = document.getElementById('sup-sidebar-toggle-icon');
+  if (!col || !handleWrap || !track || !toggleBtn || !toggleIcon) return;
+
+  if (!isSupDesktopWidth()) {
+    // Mobile/tablet: always full width, stacked; resize/collapse UI is
+    // meaningless below lg since the sidebar isn't sitting beside the queue.
+    col.classList.remove('hidden');
+    col.style.width = '';
+    handleWrap.classList.add('hidden');
+    return;
+  }
+
+  handleWrap.classList.remove('hidden');
+
+  if (supSidebarCollapsed) {
+    col.classList.add('hidden');
+    track.classList.add('invisible', 'pointer-events-none');
+    toggleBtn.title = 'Show sidebar';
+    toggleIcon.setAttribute('d', SUP_TOGGLE_ICON_EXPAND);
+  } else {
+    col.classList.remove('hidden');
+    track.classList.remove('invisible', 'pointer-events-none');
+    toggleBtn.title = 'Hide sidebar';
+    toggleIcon.setAttribute('d', SUP_TOGGLE_ICON_COLLAPSE);
+    const clamped = Math.max(SUP_SIDEBAR_MIN_WIDTH, Math.min(SUP_SIDEBAR_MAX_WIDTH, supSidebarWidth));
+    col.style.width = clamped + 'px';
+  }
+}
+
+function toggleSupSidebar() {
+  supSidebarCollapsed = !supSidebarCollapsed;
+  localStorage.setItem('supSidebarCollapsed', supSidebarCollapsed ? '1' : '0');
+  applySupSidebarState();
+}
+
+function startSupSidebarResize(e) {
+  if (!isSupDesktopWidth() || supSidebarCollapsed) return;
+  e.preventDefault();
+  supSidebarDragging = true;
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'col-resize';
+  window.addEventListener('mousemove', handleSupSidebarDrag);
+  window.addEventListener('mouseup', stopSupSidebarResize);
+}
+
+function handleSupSidebarDrag(e) {
+  if (!supSidebarDragging) return;
+  const col = document.getElementById('sup-sidebar-col');
+  if (!col) return;
+  const rect = col.getBoundingClientRect();
+  let newWidth = e.clientX - rect.left;
+  newWidth = Math.max(SUP_SIDEBAR_MIN_WIDTH, Math.min(SUP_SIDEBAR_MAX_WIDTH, newWidth));
+  supSidebarWidth = newWidth;
+  col.style.width = newWidth + 'px';
+}
+
+function stopSupSidebarResize() {
+  if (!supSidebarDragging) return;
+  supSidebarDragging = false;
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  window.removeEventListener('mousemove', handleSupSidebarDrag);
+  window.removeEventListener('mouseup', stopSupSidebarResize);
+  localStorage.setItem('supSidebarWidth', String(supSidebarWidth));
+}
+
+// Re-apply on viewport changes (e.g. rotating a tablet, resizing a browser
+// window across the lg breakpoint) so the sidebar never gets stuck in a
+// desktop-only state on a now-mobile-sized viewport, or vice versa.
+window.addEventListener('resize', applySupSidebarState);
+
 function supportRoster() {
   return teamMembers.filter(m => isSupportUser(m));
+}
+
+// ----------------------------------------------------------------------------
+// TEAM WORKLOAD: which roster members show up as clickable pills is
+// customizable per-browser via the "Edit" control next to the section
+// header. The first time this runs on a given browser (no saved prefs yet)
+// it defaults to hiding placeholder/test accounts like "Admin User"; after
+// that, the person's own choices (shown or hidden, for any support member)
+// are what's remembered.
+// ----------------------------------------------------------------------------
+let supWorkloadHidden = new Set();
+let supWorkloadHiddenInitialized = false;
+
+function getDefaultHiddenWorkloadMembers() {
+  return teamMembers.filter(m => m.name.trim().toLowerCase() === 'admin user').map(m => m.email.toLowerCase());
+}
+
+function ensureSupWorkloadHiddenInitialized() {
+  if (supWorkloadHiddenInitialized) return;
+  const stored = localStorage.getItem('supWorkloadHidden');
+  if (stored !== null) {
+    try { supWorkloadHidden = new Set(JSON.parse(stored)); } catch (e) { supWorkloadHidden = new Set(); }
+  } else {
+    supWorkloadHidden = new Set(getDefaultHiddenWorkloadMembers());
+  }
+  supWorkloadHiddenInitialized = true;
+}
+
+function toggleSupWorkloadEdit() {
+  const panel = document.getElementById('sup-workload-edit-panel');
+  if (!panel) return;
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) renderSupWorkloadEditPanel();
+}
+
+function renderSupWorkloadEditPanel() {
+  const panel = document.getElementById('sup-workload-edit-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  ensureSupWorkloadHiddenInitialized();
+  const roster = supportRoster();
+  panel.innerHTML = roster.length
+    ? roster.map(m => {
+        const email = m.email.toLowerCase();
+        const checked = !supWorkloadHidden.has(email) ? ' checked' : '';
+        return '<label class="flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer">' +
+          '<input type="checkbox" class="w-3 h-3 accent-emerald-600" onchange="toggleSupWorkloadMember(\'' + esc(email) + '\', this.checked)"' + checked + '>' +
+          '<span class="truncate">' + esc(m.name) + '</span>' +
+          '</label>';
+      }).join('')
+    : '<p class="text-[11px] text-slate-400">No support team members found.</p>';
+}
+
+function toggleSupWorkloadMember(email, visible) {
+  ensureSupWorkloadHiddenInitialized();
+  if (visible) supWorkloadHidden.delete(email);
+  else supWorkloadHidden.add(email);
+  localStorage.setItem('supWorkloadHidden', JSON.stringify(Array.from(supWorkloadHidden)));
+  renderSupervisorDesk();
 }
 
 function populateFilterDropdowns() {
@@ -1884,115 +2278,139 @@ function populateFilterDropdowns() {
   }
 }
 
-function setSupScope(scope) {
-  supScope = scope;
-  ['all', 'mine-all', 'mine-active', 'unassigned'].forEach(s => {
-    const btn = document.getElementById('sup-scope-' + s);
-    if (!btn) return;
-    const active = s === scope;
-    btn.className = 'px-3 py-1.5 ' + (active ? 'bg-slate-900 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-slate-50 font-normal');
-  });
-  renderSupervisorDesk();
-}
-
-function toggleSupChip(chip) {
-  supChips[chip] = !supChips[chip];
-  refreshSupChipStyles();
-  renderSupervisorDesk();
-}
-
-function refreshSupChipStyles() {
-  const styles = {
-    p1: ['bg-rose-600 text-white border-rose-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50'],
-    hold: ['bg-purple-600 text-white border-purple-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50'],
-    followup: ['bg-indigo-600 text-white border-indigo-600 font-semibold', 'border-slate-200 text-slate-600 hover:bg-slate-50']
-  };
-  Object.keys(styles).forEach(chip => {
-    const btn = document.getElementById('sup-chip-' + chip);
-    if (!btn) return;
-    btn.className = 'px-2.5 py-1.5 rounded-lg text-[11px] border transition ' + (supChips[chip] ? styles[chip][0] : styles[chip][1]);
-  });
-}
-
+// The KPI cards are the ONLY quick-filter control (no separate scope-button
+// row or chip row duplicating them). Clicking a card applies that filter;
+// clicking the already-active card clears it back to "All Queue".
+// Activating a quick filter clears any workload-pill assignee selection -
+// otherwise "Follow-Ups" + "Nicole" can silently combine into an empty,
+// confusing result with no visible explanation. Each control shows one
+// thing at a time; combining filters deliberately still works via "More
+// filters" below, which is the explicit multi-filter tool.
 function supKpiClick(kind) {
-  supChips = { p1: false, hold: false, followup: false };
-  if (kind === 'p1') { supScope = 'all'; supChips.p1 = true; }
-  else if (kind === 'hold') { supScope = 'all'; supChips.hold = true; }
-  else if (kind === 'followup') { supScope = 'all'; supChips.followup = true; }
-  else if (kind === 'mine-active') { supScope = 'mine-active'; }
-  else if (kind === 'unassigned') { supScope = 'unassigned'; }
-  refreshSupChipStyles();
-  setSupScope(supScope);
+  supQuickFilter = (supQuickFilter === kind) ? 'all' : kind;
+  if (supQuickFilter !== 'all') {
+    const assigneeSel = document.getElementById('sup-filter-assignee');
+    if (assigneeSel) assigneeSel.value = '';
+  }
+  refreshSupQuickFilterStyles();
+  renderSupervisorDesk();
 }
 
-function toggleSupMore() {
-  const panel = document.getElementById('sup-more-panel');
-  const showing = panel.classList.toggle('hidden');
-  document.getElementById('sup-more-btn').innerText = showing ? 'More filters' : 'Hide filters';
+function refreshSupQuickFilterStyles() {
+  const styleByKind = {
+    unassigned: { active: 'ring-4 ring-amber-300 border-amber-400 bg-amber-50 shadow-md scale-[1.02]', label: 'text-amber-700', count: 'text-amber-900' },
+    'mine-active': { active: 'ring-4 ring-emerald-300 border-emerald-400 bg-emerald-50 shadow-md scale-[1.02]', label: 'text-emerald-700', count: 'text-emerald-900' },
+    hold: { active: 'ring-4 ring-purple-300 border-purple-400 bg-purple-50 shadow-md scale-[1.02]', label: 'text-purple-700', count: 'text-purple-900' },
+    followup: { active: 'ring-4 ring-indigo-300 border-indigo-400 bg-indigo-50 shadow-md scale-[1.02]', label: 'text-indigo-700', count: 'text-indigo-900' }
+  };
+  const countElByKind = { unassigned: 'sup-kpi-unassigned', 'mine-active': 'sup-kpi-mine', hold: 'sup-kpi-hold', followup: 'sup-kpi-followup' };
+  Object.keys(styleByKind).forEach(kind => {
+    const card = document.getElementById('sup-kpi-card-' + kind);
+    const badge = document.getElementById('sup-kpi-badge-' + kind);
+    const countEl = document.getElementById(countElByKind[kind]);
+    if (!card) return;
+    const active = supQuickFilter === kind;
+    card.className = 'relative bg-white rounded-xl border-2 shadow-sm p-3 text-left transition-all duration-150 group ' +
+      (active ? styleByKind[kind].active : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md');
+    if (badge) badge.classList.toggle('hidden', !active);
+    if (countEl) countEl.className = 'text-xl font-bold mt-0.5 ' + (active ? styleByKind[kind].count : 'text-slate-800');
+  });
 }
 
 function clearSupFilters() {
-  supScope = 'all';
-  supChips = { p1: false, hold: false, followup: false };
+  supQuickFilter = 'all';
   document.getElementById('sup-search').value = '';
+  document.getElementById('sup-filter-priority').value = 'ALL';
   document.getElementById('sup-filter-askedby').value = '';
   document.getElementById('sup-filter-assignee').value = '';
   document.getElementById('sup-filter-date').value = '';
-  refreshSupChipStyles();
-  setSupScope('all');
+  refreshSupQuickFilterStyles();
+  renderSupervisorDesk();
+}
+
+// Clicking a workload pill filters by that assignee - the same effect as
+// picking them from the "Assigned to" dropdown, just one click closer.
+// Also clears any active KPI quick filter (see supKpiClick comment above) so
+// clicking a person's name reliably shows their tickets, regardless of
+// whatever quick filter happened to be active before - and regardless of
+// which role (Support / Supervisor / Manager) is logged in, since this
+// logic doesn't depend on the viewer's own role at all.
+function filterByWorkloadPill(email) {
+  const sel = document.getElementById('sup-filter-assignee');
+  if (!sel) return;
+  const turningOn = sel.value !== email;
+  sel.value = turningOn ? email : '';
+  if (turningOn && supQuickFilter !== 'all') {
+    supQuickFilter = 'all';
+    refreshSupQuickFilterStyles();
+  }
+  renderSupervisorDesk();
 }
 
 function renderSupervisorDesk() {
   const container = document.getElementById('sup-groups');
   if (!container || !currentUser) return;
 
+  applySupSidebarState();
+
   const open = allQuestions.filter(q => q.sheet === 'Questions Tracker');
   const me = (currentUser.email || '').toLowerCase();
 
-  // Top KPI Numbers
-  document.getElementById('sup-kpi-p1').innerText = open.filter(q => normalizePriority(q.priority) === 'P1' && q.status !== 'Hold').length;
+  // Top KPI Numbers. Unassigned counts every unassigned ticket regardless of
+  // priority - assignment status takes precedence over urgency here, same as
+  // the grouping below.
   document.getElementById('sup-kpi-unassigned').innerText = open.filter(q => !q.assignedTo && q.status !== 'Hold').length;
   document.getElementById('sup-kpi-mine').innerText = open.filter(q => q.assignedTo === me && q.status !== 'Hold').length;
   document.getElementById('sup-kpi-hold').innerText = open.filter(q => q.status === 'Hold').length;
   document.getElementById('sup-kpi-followup').innerText = open.filter(q => q.isFollowUp).length;
+  refreshSupQuickFilterStyles();
 
-  // Workload Metrics Strip
+  // Workload Metrics Strip - clickable pills, busiest supervisor first, so
+  // "who's carrying the load right now" is a glance instead of a report.
   const workloadContainer = document.getElementById('sup-workload-pills');
+  const currentAssigneeFilter = document.getElementById('sup-filter-assignee').value;
   if (workloadContainer) {
+    ensureSupWorkloadHiddenInitialized();
     const counts = {};
-    let unassignedCount = 0;
-    supportRoster().forEach(m => { counts[m.email.toLowerCase()] = { name: m.name, count: 0 }; });
+    supportRoster().filter(m => !supWorkloadHidden.has(m.email.toLowerCase())).forEach(m => { counts[m.email.toLowerCase()] = { name: m.name, email: m.email.toLowerCase(), count: 0 }; });
 
     open.forEach(q => {
       if (q.status !== 'Hold') {
         const assigned = (q.assignedTo || '').toLowerCase();
-        if (assigned && counts[assigned]) {
-          counts[assigned].count += 1;
-        } else if (!assigned) {
-          unassignedCount += 1;
-        }
+        if (assigned && counts[assigned]) counts[assigned].count += 1;
       }
     });
 
-    let pillsHtml = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Unassigned: ' + unassignedCount + '</span>';
-    Object.values(counts).forEach(c => {
-      pillsHtml += '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">' + esc(c.name) + ': ' + c.count + '</span>';
-    });
-    workloadContainer.innerHTML = pillsHtml;
+    const sortedCounts = Object.values(counts).sort((a, b) => b.count - a.count);
+    if (sortedCounts.length === 0) {
+      workloadContainer.innerHTML = '<span class="text-slate-400 text-[11px]">No one shown - use Edit to add support members.</span>';
+    } else if (sortedCounts.every(c => c.count === 0)) {
+      workloadContainer.innerHTML = '<span class="text-slate-400 text-[11px]">Nothing assigned yet.</span>';
+    } else {
+      workloadContainer.innerHTML = sortedCounts.map(c => {
+        const active = currentAssigneeFilter === c.email;
+        const base = active
+          ? 'bg-slate-900 text-white border-slate-900 font-bold shadow-md ring-2 ring-slate-400 scale-105'
+          : (c.count === 0 ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300');
+        const checkmark = active ? '<span class="mr-1">✓</span>' : '';
+        return '<button onclick="filterByWorkloadPill(\'' + esc(c.email) + '\')" class="px-3 py-1.5 rounded-full text-xs border transition-all duration-150 ' + base + '">' + checkmark + esc(c.name) + ': ' + c.count + '</button>';
+      }).join('');
+    }
+    renderSupWorkloadEditPanel();
   }
 
   const search = (document.getElementById('sup-search').value || '').toLowerCase();
+  const fPriority = document.getElementById('sup-filter-priority').value;
   const fAsked = document.getElementById('sup-filter-askedby').value;
   const fAssignee = document.getElementById('sup-filter-assignee').value;
   const fDate = document.getElementById('sup-filter-date').value;
 
   const filtered = open.filter(q => {
-    if (supScope === 'mine-all' && q.assignedTo !== me) return false;
-    if (supScope === 'mine-active' && (q.assignedTo !== me || q.status === 'Hold')) return false;
-    if (supScope === 'unassigned' && q.assignedTo) return false;
-    if (supChips.p1 && (normalizePriority(q.priority) !== 'P1' || q.status === 'Hold')) return false;
-    if (supChips.hold && q.status !== 'Hold') return false;
-    if (supChips.followup && !q.isFollowUp) return false;
+    if (supQuickFilter === 'unassigned' && q.assignedTo) return false;
+    if (supQuickFilter === 'mine-active' && (q.assignedTo !== me || q.status === 'Hold')) return false;
+    if (supQuickFilter === 'hold' && q.status !== 'Hold') return false;
+    if (supQuickFilter === 'followup' && !q.isFollowUp) return false;
+    if (fPriority !== 'ALL' && normalizePriority(q.priority) !== fPriority) return false;
     if (search && !(q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search) || getUserDisplayName(q.askedBy).toLowerCase().includes(search))) return false;
     if (fAsked && (q.askedByEmail || '') !== fAsked) return false;
     if (fAssignee === '__none__' && q.assignedTo) return false;
@@ -2005,11 +2423,14 @@ function renderSupervisorDesk() {
   supSelected.forEach(id => { if (!visibleIds.has(id)) supSelected.delete(id); });
   updateBulkBar();
 
-  // Grouping Logic
-  const groups = { p1: [], unassigned: [], mine: [], hold: [], others: [] };
+  // Grouping Logic - who's handling it (unassigned / mine / hold / others)
+  // decides the section, NOT priority. Priority is still visible per-row via
+  // the P1/Open badge and drives the "waiting" sort within each section, so
+  // urgent tickets still surface near the top of whichever section they're
+  // actually in - it just doesn't pull them out of the Unassigned queue.
+  const groups = { unassigned: [], mine: [], hold: [], others: [] };
   filtered.forEach(q => {
     if (q.status === 'Hold') groups.hold.push(q);
-    else if (normalizePriority(q.priority) === 'P1') groups.p1.push(q);
     else if (!q.assignedTo) groups.unassigned.push(q);
     else if (q.assignedTo === me) groups.mine.push(q);
     else groups.others.push(q);
@@ -2019,7 +2440,6 @@ function renderSupervisorDesk() {
   Object.keys(groups).forEach(k => groups[k].sort(byWait));
 
   const sections = [
-    { key: 'p1', title: 'Needs Attention Now (P1)', accent: 'text-rose-700', dot: 'bg-rose-500' },
     { key: 'unassigned', title: 'Unassigned Queue', accent: 'text-amber-700', dot: 'bg-amber-500' },
     { key: 'mine', title: 'Assigned to Me', accent: 'text-emerald-700', dot: 'bg-emerald-500' },
     { key: 'hold', title: 'On Hold', accent: 'text-purple-700', dot: 'bg-purple-500' },
@@ -2065,7 +2485,7 @@ function renderSupervisorDesk() {
 
       let statusBadgeHtml = '';
       if (onHold) {
-        statusBadgeHtml = '<button onclick="event.stopPropagation(); showHoldReasonAlert(\'' + esc(q.holdReason) + '\')" class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 hover:bg-purple-100/80 transition" title="Click to view full reason">On Hold ℹ️</button>';
+        statusBadgeHtml = '<button onclick="event.stopPropagation(); showHoldReasonAlert(\'' + esc(q.ticketId) + '\')" class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 hover:bg-purple-100/80 transition" title="Click to view full reason">On Hold ℹ️</button>';
       } else if (prio === 'P1') {
         statusBadgeHtml = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-50 text-rose-700 border border-rose-200/60">P1 Urgent</span>';
       } else {
@@ -2213,7 +2633,7 @@ function openAnswerModal(ticketId) {
 
   const onHold = q.status === 'Hold';
   document.getElementById('modal-hold-banner').classList.toggle('hidden', !onHold);
-  document.getElementById('modal-hold-reason').innerText = q.holdReason || '';
+  document.getElementById('modal-hold-reason').innerHTML = renderHoldReasonHtml(q.holdReason);
   document.getElementById('modal-hold-btn').classList.toggle('hidden', onHold);
   document.getElementById('modal-resume-btn').classList.toggle('hidden', !onHold);
 
@@ -2485,7 +2905,7 @@ function filterReport(type) {
   records.forEach(r => {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-50';
-    const statusLabel = r.status === 'Hold' ? 'Hold' + (r.holdReason ? ' — ' + r.holdReason : '') : r.status;
+    const statusLabel = r.status === 'Hold' ? 'Hold' + (r.holdReason ? ' — ' + latestHoldReasonText(r.holdReason) : '') : r.status;
     tr.innerHTML =
       '<td class="p-3 truncate">' + r.question + '</td>' +
       '<td class="p-3 truncate font-medium">' + esc(getUserDisplayName(r.askedBy)) + '</td>' +

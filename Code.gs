@@ -351,9 +351,13 @@ function getTeamMembers() {
 }
 
 // Some Team Setup names carry a leading brand prefix token ("Nora") that is not
-// part of the person's real name (e.g. "Nora - Alice Smith", "Nora: Alice Smith").
-// Strip it here so the whole UI (login dropdown, headers, filters, Team table,
-// mentions) shows clean names. If "Nora" alone is the entire name, it is kept.
+// part of the person's real name (e.g. "Nora - Alice Smith", "Nora: Alice Smith",
+// or just "Nora Alice Smith" with no punctuation at all). Strip it here so the
+// whole UI (login dropdown, headers, filters, Team table, mentions) shows clean
+// names, AND so ticket-ownership matching (which falls back to comparing names
+// for legacy tickets that predate the Asked By Email column) isn't broken by
+// this prefix being added/removed on the roster after those tickets were filed.
+// If "Nora" alone is the entire name, it is kept as-is (nothing left to show).
 function stripNoraPrefix(name) {
   const raw = String(name || '').trim();
   const cleaned = raw.replace(/^Nora[\s\-_:/]*/i, '').trim();
@@ -594,7 +598,12 @@ function getQuestionsData(requestingEmail) {
           sheet: SHEET_QUESTIONS,
           question: qText,
           eventName: String(row[1] || "").trim(),
-          askedBy: String(row[2] || "").trim(),
+          // Normalized through stripNoraPrefix so a roster rebrand (e.g. adding
+          // a "Nora" prefix to display names) never desyncs the raw text that
+          // was stored on the ticket at submission time from what's shown /
+          // matched against today. Client-side ownership checks compare against
+          // this already-normalized value.
+          askedBy: stripNoraPrefix(String(row[2] || "").trim()),
           askedByEmail: String(row[Q_COL.ASKED_BY_EMAIL - 1] || "").trim().toLowerCase(),
           created: createdIso,
           caseLink: String(row[7] || "").trim(),
@@ -639,7 +648,7 @@ function getQuestionsData(requestingEmail) {
           sheet: SHEET_ANSWERED,
           question: qText,
           eventName: String(row[1] || "").trim(),
-          askedBy: String(row[2] || "").trim(),
+          askedBy: stripNoraPrefix(String(row[2] || "").trim()),
           askedByEmail: String(row[A_COL.ASKED_BY_EMAIL - 1] || "").trim().toLowerCase(),
           created: createdIso,
           answeredDate: answeredIso,
@@ -648,7 +657,7 @@ function getQuestionsData(requestingEmail) {
           caseLink: String(row[7] || "").trim(),
           answer: String(row[8] || "").trim(),
           status: String(row[9] || STATUS_ANSWERED).trim(),
-          answeredBy: String(row[10] || "Supervisor").trim(),
+          answeredBy: stripNoraPrefix(String(row[10] || "Supervisor").trim()),
           priority: String(row[5] || "Resolved").trim(),
           hoursElapsed: 0,
           isRead: isReadByUser(row[11], requestingEmail)
@@ -816,13 +825,23 @@ function holdQuestion(ticketId, reason, requestingEmail) {
 
     const current = sheet.getRange(rowIndex, 1, 1, Q_WIDTH).getValues()[0];
     const alreadyOnHold = !!current[Q_COL.HOLD_SINCE - 1];
+    const cleanReason = String(reason || '').trim();
 
-    sheet.getRange(rowIndex, Q_COL.HOLD_REASON).setValue(String(reason || '').trim());
+    // Every hold action is stamped with who did it and when, same pattern as
+    // Assignment Notes - appended (not overwritten) so if the reason is
+    // updated while still on hold, the full history for this hold period
+    // stays visible rather than silently replacing the original attribution.
+    const stamp = formatCSTStamp(new Date());
+    const entry = '[' + (alreadyOnHold ? 'Hold reason updated' : 'Put on hold') + ' by ' + member.name + ' · ' + stamp + ' CST]: ' + cleanReason;
+    const existingReason = String(current[Q_COL.HOLD_REASON - 1] || '').trim();
+    const newReasonValue = (alreadyOnHold && existingReason) ? existingReason + '\n\n' + entry : entry;
+
+    sheet.getRange(rowIndex, Q_COL.HOLD_REASON).setValue(newReasonValue);
     if (!alreadyOnHold) {
       sheet.getRange(rowIndex, Q_COL.STATUS).setValue(STATUS_HOLD);
       sheet.getRange(rowIndex, Q_COL.HOLD_SINCE).setValue(new Date());
     }
-    logAudit(alreadyOnHold ? 'HOLD_REASON_UPDATED' : 'HOLD', member.email, member.name, ticketId, { reason: String(reason || '').trim() });
+    logAudit(alreadyOnHold ? 'HOLD_REASON_UPDATED' : 'HOLD', member.email, member.name, ticketId, { reason: cleanReason });
     return { success: true };
   });
 }
@@ -869,7 +888,7 @@ function addQuestionUpdate(ticketId, updateText, requestingEmail) {
 
     const isOwner = askedByEmail
       ? askedByEmail === reqEmail
-      : askedByName.toLowerCase() === String(member.name || '').trim().toLowerCase();
+      : stripNoraPrefix(askedByName).toLowerCase() === stripNoraPrefix(String(member.name || '').trim()).toLowerCase();
 
     if (!isOwner && !isSupportMember(member)) {
       throw new Error("Access denied: you can only add updates to your own tickets.");
@@ -899,7 +918,7 @@ function reopenAnsweredTicket(ticketId, updateText, requestingEmail) {
     const reqEmail = normalizeEmail(requestingEmail);
     const isOwner = askedByEmail
       ? askedByEmail === reqEmail
-      : askedByName.toLowerCase() === String(member.name || '').trim().toLowerCase();
+      : stripNoraPrefix(askedByName).toLowerCase() === stripNoraPrefix(String(member.name || '').trim()).toLowerCase();
 
     if (!isOwner && !isSupportMember(member)) {
       throw new Error("Access denied: only the original asker or a Support/Supervisor can reopen this ticket.");
@@ -1045,8 +1064,8 @@ function markAllAnsweredRead(requestingEmail) {
 
     for (let i = 0; i < data.length; i++) {
       const rowAskerEmail = String(data[i][A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
-      const rowAskerName = String(data[i][A_COL.ASKED_BY - 1] || '').trim().toLowerCase();
-      const isOwn = rowAskerEmail === email || (rowAskerName && rowAskerName === String(member.name).trim().toLowerCase());
+      const rowAskerName = stripNoraPrefix(String(data[i][A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
+      const isOwn = rowAskerEmail === email || (rowAskerName && rowAskerName === stripNoraPrefix(String(member.name)).trim().toLowerCase());
       const eligible = requesterIsSupport ? true : isOwn;
       let list = parseReadByList(data[i][A_COL.READ_BY - 1]).filter(e => e !== '*');
       if (eligible && list.indexOf(email) === -1) {
