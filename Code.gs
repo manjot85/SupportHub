@@ -60,9 +60,9 @@ const Q_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, DUE: 5, PRIORITY: 6,
   HOURS_LEFT: 7, LINK: 8, ANSWER: 9, STATUS: 10, ASSIGNED: 11,
   TICKET_ID: 12, HOLD_REASON: 13, HOLD_SINCE: 14, HOLD_ACCUM: 15, ASKED_BY_EMAIL: 16,
-  FOLLOWUP: 17, ASSIGN_NOTES: 18
+  FOLLOWUP: 17, ASSIGN_NOTES: 18, STATUS_CHANGED_AT: 19, STATUS_CHANGED_BY: 20
 };
-const Q_WIDTH = 18;
+const Q_WIDTH = 20;
 
 const A_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, ANSWERED: 5, PRIORITY: 6,
@@ -73,6 +73,11 @@ const A_WIDTH = 15;
 
 // Canonical status values — never write anything else into the Status columns.
 const STATUS_OPEN = "Open";
+
+function isFollowUpValue(value) {
+  if (value === true || value === 1) return true;
+  return ['true', 'yes', '1', 'follow-up', 'follow up'].includes(String(value || '').trim().toLowerCase());
+}
 const STATUS_HOLD = "Hold";
 const STATUS_ANSWERED = "Answered";
 
@@ -137,7 +142,7 @@ function ensureSheetsExist() {
   let qSheet = ss.getSheetByName(SHEET_QUESTIONS);
   if (!qSheet) {
     qSheet = ss.insertSheet(SHEET_QUESTIONS);
-    qSheet.appendRow(["Question", "Event/Wedding Name", "Asked By", "Created", "Due Date & Time", "Auto Priority", "Hours Left", "Case / Event Link", "Answer", "Status", "Assigned To", "Ticket ID", "Hold Reason", "Hold Since", "Cumulative Hold Hours", "Asked By Email", "Is Follow Up"]);
+    qSheet.appendRow(["Question", "Event/Wedding Name", "Asked By", "Created", "Due Date & Time", "Auto Priority", "Hours Left", "Case / Event Link", "Answer", "Status", "Assigned To", "Ticket ID", "Hold Reason", "Hold Since", "Cumulative Hold Hours", "Asked By Email", "Is Follow Up", "Assignment Notes", "Status Changed At", "Status Changed By"]);
   }
   ensureQuestionsSchema(qSheet);
 
@@ -221,6 +226,17 @@ function ensureQuestionsSchema(sheet) {
       const range = sheet.getRange(2, Q_COL.ASSIGN_NOTES, lastRow - 1, 1);
       const vals = range.getValues().map(r => [r[0] || ""]);
       range.setValues(vals);
+    }
+  }
+
+  lastCol = Math.max(sheet.getLastColumn(), 1);
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers[Q_COL.STATUS_CHANGED_AT - 1] !== 'Status Changed At') {
+    sheet.getRange(1, Q_COL.STATUS_CHANGED_AT, 1, 2).setValues([["Status Changed At", "Status Changed By"]]);
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      const rows = sheet.getRange(2, 1, lastRow - 1, Q_WIDTH).getValues();
+      sheet.getRange(2, Q_COL.STATUS_CHANGED_AT, lastRow - 1, 2).setValues(rows.map(row => [row[Q_COL.CREATED - 1] || '', row[Q_COL.ASKED_BY - 1] || '']));
     }
   }
 }
@@ -744,8 +760,10 @@ function getQuestionsData(requestingEmail) {
           hoursElapsed: prioInfo.hoursElapsed,
           holdReason: String(row[Q_COL.HOLD_REASON - 1] || "").trim(),
           holdSince: holdSinceRaw ? safeIsoDate(holdSinceRaw) : "",
-          isFollowUp: row[Q_COL.FOLLOWUP - 1] === true,
+          isFollowUp: isFollowUpValue(row[Q_COL.FOLLOWUP - 1]),
           assignNotes: String(row[Q_COL.ASSIGN_NOTES - 1] || "").trim(),
+          statusChangedAt: row[Q_COL.STATUS_CHANGED_AT - 1] ? safeIsoDate(row[Q_COL.STATUS_CHANGED_AT - 1]) : "",
+          statusChangedBy: stripNoraPrefix(String(row[Q_COL.STATUS_CHANGED_BY - 1] || '').trim()),
           isRead: true
         });
       }
@@ -924,7 +942,10 @@ function submitQuestion(payload) {
       "",
       0,
       member.email,
-      false
+      false,
+      "",
+      now,
+      member.name
     ]);
 
     logAudit('SUBMIT', member.email, member.name, ticketId, { 
@@ -1016,9 +1037,12 @@ function holdQuestion(ticketId, reason, requestingEmail) {
     const newReasonValue = (alreadyOnHold && existingReason) ? existingReason + '\n\n' + entry : entry;
 
     sheet.getRange(rowIndex, Q_COL.HOLD_REASON).setValue(newReasonValue);
+    sheet.getRange(rowIndex, Q_COL.FOLLOWUP).setValue(false);
     if (!alreadyOnHold) {
       sheet.getRange(rowIndex, Q_COL.STATUS).setValue(STATUS_HOLD);
       sheet.getRange(rowIndex, Q_COL.HOLD_SINCE).setValue(new Date());
+      sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_AT).setValue(new Date());
+      sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_BY).setValue(member.name);
     }
     logAudit(alreadyOnHold ? 'HOLD_REASON_UPDATED' : 'HOLD', member.email, member.name, ticketId, { reason: cleanReason });
     return { success: true };
@@ -1045,6 +1069,9 @@ function resumeQuestion(ticketId, requestingEmail) {
     sheet.getRange(rowIndex, Q_COL.HOLD_REASON).setValue("");
     sheet.getRange(rowIndex, Q_COL.HOLD_SINCE).setValue("");
     sheet.getRange(rowIndex, Q_COL.HOLD_ACCUM).setValue(newCumulative);
+    sheet.getRange(rowIndex, Q_COL.FOLLOWUP).setValue(false);
+    sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_AT).setValue(new Date());
+    sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_BY).setValue(member.name);
     logAudit('RESUME', member.email, member.name, ticketId, { holdHoursAdded: elapsedHours.toFixed(2) });
     return { success: true };
   });
@@ -1076,8 +1103,27 @@ function addQuestionUpdate(ticketId, updateText, requestingEmail) {
     const stamp = formatCSTStamp(new Date());
     const newQuestion = String(current[Q_COL.QUESTION - 1] || '') + "\n\n[Update " + stamp + " CST by " + member.name + "]: " + text;
     sheet.getRange(rowIndex, Q_COL.QUESTION).setValue(newQuestion);
-    logAudit('ADD_UPDATE', member.email, member.name, ticketId, { textLength: text.length });
-    return { success: true };
+
+    const wasOnHold = String(current[Q_COL.STATUS - 1] || '').trim() === STATUS_HOLD;
+    if (wasOnHold) {
+      const holdSinceVal = current[Q_COL.HOLD_SINCE - 1];
+      const holdSince = holdSinceVal instanceof Date ? holdSinceVal : new Date(holdSinceVal);
+      const holdHours = holdSinceVal && !isNaN(holdSince.getTime())
+        ? Math.max(0, (new Date() - holdSince) / (1000 * 60 * 60))
+        : 0;
+      const cumulativeHold = (Number(current[Q_COL.HOLD_ACCUM - 1]) || 0) + holdHours;
+
+      sheet.getRange(rowIndex, Q_COL.STATUS).setValue(STATUS_OPEN);
+      sheet.getRange(rowIndex, Q_COL.HOLD_REASON).setValue('');
+      sheet.getRange(rowIndex, Q_COL.HOLD_SINCE).setValue('');
+      sheet.getRange(rowIndex, Q_COL.HOLD_ACCUM).setValue(cumulativeHold);
+      sheet.getRange(rowIndex, Q_COL.FOLLOWUP).setValue(true);
+      sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_AT).setValue(new Date());
+      sheet.getRange(rowIndex, Q_COL.STATUS_CHANGED_BY).setValue(member.name);
+    }
+
+    logAudit(wasOnHold ? 'ADD_UPDATE_FOLLOWUP' : 'ADD_UPDATE', member.email, member.name, ticketId, { textLength: text.length });
+    return { success: true, followUp: wasOnHold };
   });
 }
 
@@ -1134,7 +1180,10 @@ function reopenAnsweredTicket(ticketId, updateText, requestingEmail) {
       "",
       0,
       askedByEmail || "",
-      true
+      true,
+      "",
+      now,
+      member.name
     ]);
 
     aSheet.deleteRow(rowIndex);

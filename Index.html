@@ -131,7 +131,7 @@ Sign In to Portal &rarr;
 </div>
 
 <!-- ContentEditable Rich Editor Box -->
-<div id="editor-inp-question" contenteditable="true" onkeyup="handleMentionSearch(event)" onclick="handleMentionSearch(event)" class="rich-editor-content w-full border border-slate-300 p-3 rounded-b-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition bg-white leading-relaxed"></div>
+<div id="editor-inp-question" contenteditable="true" onkeyup="handleMentionSearch(event)" onkeydown="handleMentionKeyboard(event)" onclick="handleMentionSearch(event)" class="rich-editor-content w-full border border-slate-300 p-3 rounded-b-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition bg-white leading-relaxed"></div>
 <input type="hidden" id="inp-assigned-email">
 
 <!-- Mention Suggestions Popup -->
@@ -801,6 +801,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <span id="tdmodal-status-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60">Open</span>
 <h3 id="tdmodal-event" class="text-lg font-bold text-slate-900 mt-1 break-all">Event Name</h3>
 <p class="text-[11px] text-slate-400">Asked by: <span id="tdmodal-asked" class="font-semibold text-slate-700"></span></p>
+<p class="text-[11px] text-slate-400">Submitted: <span id="tdmodal-created" class="font-semibold text-slate-700"></span></p>
 </div>
 <button onclick="closeTicketDetailModal()" class="shrink-0 text-slate-400 hover:text-slate-600 font-bold text-xl leading-none">&times;</button>
 </div>
@@ -833,6 +834,7 @@ This ticket has not been answered yet.
 <div class="grid grid-cols-2 gap-3 text-[11px] bg-slate-50 p-3 rounded-xl border border-slate-200/80">
 <div><span class="text-slate-400">Answered By:</span> <strong id="tdmodal-by" class="text-slate-800"></strong></div>
 <div><span class="text-slate-400">Assigned To:</span> <strong id="tdmodal-assigned" class="text-slate-800"></strong></div>
+<div><span class="text-slate-400">Status Changed:</span> <strong id="tdmodal-status-changed" class="text-slate-800"></strong></div>
 <div class="col-span-2 min-w-0"><span class="text-slate-400">Case Link:</span> <a id="tdmodal-link" href="#" target="_blank" class="text-blue-600 font-bold underline break-all">Open Case Link &rarr;</a></div>
 </div>
 </div>
@@ -1020,13 +1022,19 @@ function handleMentionSearch(e) {
     
     if (matches.length > 0) {
       dropdown.innerHTML = '';
-      matches.forEach(m => {
-        const item = document.createElement('div');
-        item.className = 'p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center';
+      matches.forEach((m, index) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.tabIndex = 0;
+        item.className = 'w-full text-left p-2 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none cursor-pointer flex justify-between items-center';
         item.innerHTML = '<span class="font-bold text-slate-800">' + esc(m.name) + '</span><span class="text-[10px] text-slate-400">' + esc(m.title) + '</span>';
+        item.dataset.mentionIndex = String(index);
+        item.onmousedown = event => event.preventDefault();
+        item.onkeydown = handleMentionKeyboard;
         item.onclick = () => selectMention(m);
         dropdown.appendChild(item);
       });
+      dropdown.dataset.activeIndex = '0';
       dropdown.classList.remove('hidden');
       return;
     }
@@ -1038,6 +1046,29 @@ function handleMentionSearch(e) {
   }
   
   dropdown.classList.add('hidden');
+}
+
+function handleMentionKeyboard(e) {
+  const dropdown = document.getElementById('mention-dropdown');
+  if (!dropdown || dropdown.classList.contains('hidden')) return;
+
+  const items = Array.from(dropdown.querySelectorAll('button'));
+  if (!items.length) return;
+
+  let activeIndex = parseInt(dropdown.dataset.activeIndex || '0', 10);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const direction = e.key === 'ArrowDown' ? 1 : -1;
+    activeIndex = (activeIndex + direction + items.length) % items.length;
+    dropdown.dataset.activeIndex = String(activeIndex);
+    items[activeIndex].focus();
+  } else if (e.key === 'Tab' || e.key === 'Enter') {
+    e.preventDefault();
+    items[activeIndex].click();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    dropdown.classList.add('hidden');
+  }
 }
 
 function selectMention(member) {
@@ -2137,6 +2168,7 @@ function openTicketDetail(sheet, ticketId) {
   const isAnswered = q.sheet === 'Answered';
   document.getElementById('tdmodal-event').innerText = q.eventName || '—';
   document.getElementById('tdmodal-asked').innerText = getUserDisplayName(q.askedBy);
+  document.getElementById('tdmodal-created').innerText = formatCSTDateTime(q.created, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' by ' + getUserDisplayName(q.askedBy);
   document.getElementById('tdmodal-question').innerHTML = q.question || '—';
 
   const badge = document.getElementById('tdmodal-status-badge');
@@ -2156,6 +2188,9 @@ function openTicketDetail(sheet, ticketId) {
   if (isAnswered) document.getElementById('tdmodal-answer').innerHTML = q.answer || '—';
   document.getElementById('tdmodal-by').innerText = isAnswered ? getUserDisplayName(q.answeredBy) : '—';
   document.getElementById('tdmodal-assigned').innerText = q.assignedTo ? getUserDisplayName(q.assignedTo) : '—';
+  document.getElementById('tdmodal-status-changed').innerText = q.statusChangedAt
+    ? formatCSTDateTime(q.statusChangedAt, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' by ' + (q.statusChangedBy || '—')
+    : '—';
 
   // Hold reason banner - only meaningful for open tickets currently on hold.
   const holdBanner = document.getElementById('tdmodal-hold-banner');
@@ -2827,6 +2862,7 @@ async function holdTicket(ticketId) {
       q.status = 'Hold';
       q.holdSince = new Date().toISOString();
     }
+    q.isFollowUp = false;
     renderCurrentTab();
     showToast('Ticket placed on hold.');
   }
