@@ -22,6 +22,13 @@
 //      name is no longer trusted for submissions).
 //   6. Team Setup guards: duplicate emails rejected, and the last working
 //      Admin account cannot be deleted or demoted.
+//   7. Salesforce case-link fix: the base URL used to reconstruct full case
+//      links is no longer a hardcoded guess. It's stored in Script
+//      Properties, configurable by an Admin, and auto-detected the first
+//      time anyone submits a real Salesforce URL. extractCaseId() also now
+//      refuses to touch any URL that isn't actually a Salesforce host, so
+//      non-Salesforce links (payment pages, vendor portals, etc.) can never
+//      be corrupted by the shortening logic.
 //
 // Login model (unchanged, per your choice): dropdown profile picker, no
 // passwords for regular users; Admin password only gates Admin actions.
@@ -108,7 +115,14 @@ function withLock(fn) {
     throw new Error("The system is busy handling another change right now. Please try again in a few seconds.");
   }
   try {
-    return fn();
+    const result = fn();
+    // Every function that goes through withLock is, by definition, a
+    // mutation - so bumping the shared version counter here (once, in one
+    // place) automatically covers every write path, including ones that
+    // only edit a cell in an existing row (Hold, Assign, Unassign) rather
+    // than adding/removing rows. See bumpDataVersion() for why that matters.
+    bumpDataVersion();
+    return result;
   } finally {
     lock.releaseLock();
   }
@@ -479,12 +493,81 @@ function normalizeEmail(email) {
 }
 
 // ==========================================
+// APP CONFIG: Salesforce base URL
+// ==========================================
+// The old version of this app guessed a hardcoded base URL
+// ("https://nora-x8.lightning.force.com") on the client. That guess doesn't
+// match every org's real Salesforce domain, so reconstructed case links
+// silently pointed nowhere useful (they'd fall back to resolving relative to
+// the app's own sandboxed iframe URL instead of Salesforce).
+//
+// Fix: the real base URL lives in Script Properties (server-side, shared by
+// everyone, survives redeploys). It can be:
+//   1. Set explicitly by an Admin via setSalesforceBaseUrl(), or
+//   2. Auto-detected the first time anyone submits a real, full Salesforce
+//      URL - autoDetectSalesforceBaseUrl() grabs the domain from that URL
+//      and remembers it, but only if nothing has been configured yet (it
+//      never silently overwrites an Admin's explicit choice).
+const CONFIG_KEY_SF_BASE = 'SALESFORCE_BASE_URL';
+
+function getSalesforceBaseUrl() {
+  return PropertiesService.getScriptProperties().getProperty(CONFIG_KEY_SF_BASE) || '';
+}
+
+// Admin-only: explicitly set (or clear, by passing an empty string) the base URL.
+function setSalesforceBaseUrl(url, requestingEmail) {
+  return withLock(() => {
+    const admin = requireAdminRole(requestingEmail);
+    const clean = String(url || '').trim().replace(/\/+$/, '');
+    if (clean && !/^https:\/\/[^\/]+\.(force\.com|salesforce\.com)$/i.test(clean)) {
+      throw new Error("Enter just the base URL of your Salesforce instance, e.g. https://yourcompany.lightning.force.com (no trailing path).");
+    }
+    PropertiesService.getScriptProperties().setProperty(CONFIG_KEY_SF_BASE, clean);
+    logAudit('CONFIG_SET_SF_BASE', admin.email, admin.name, '', { url: clean });
+    return { success: true, salesforceBaseUrl: clean };
+  });
+}
+
+// Best-effort self-configuration: called by the client right after any
+// submission/edit that included a real, full Salesforce URL. If nothing has
+// been configured yet, remember this domain automatically so nobody has to
+// hunt down and type the base URL by hand. Never overwrites a value that's
+// already set (whether set by an Admin or auto-detected earlier).
+function autoDetectSalesforceBaseUrl(fullUrl, requestingEmail) {
+  return withLock(() => {
+    requireTeamMember(requestingEmail);
+    if (getSalesforceBaseUrl()) return { success: true, changed: false };
+
+    const hostMatch = String(fullUrl || '').match(/^https?:\/\/([^\/]+)/i);
+    if (!hostMatch) return { success: true, changed: false };
+    const host = hostMatch[1].toLowerCase();
+    if (!/\.(force\.com|salesforce\.com)$/i.test(host)) return { success: true, changed: false };
+
+    const base = 'https://' + host;
+    PropertiesService.getScriptProperties().setProperty(CONFIG_KEY_SF_BASE, base);
+    logAudit('CONFIG_AUTO_DETECT_SF_BASE', requestingEmail, '', '', { url: base });
+    return { success: true, changed: true, base: base };
+  });
+}
+
+// Single call the client makes once at boot to pick up server-side config.
+function getAppConfig() {
+  return { salesforceBaseUrl: getSalesforceBaseUrl() };
+}
+
+// ==========================================
 // URL OPTIMIZATION: Extract Case ID from Salesforce URLs
 // ==========================================
 // Salesforce URLs can be in various formats:
 // Lightning: https://yourinstance.lightning.force.com/lightning/r/Case/5008c00000AbCdE/view
 // Classic: https://yourinstance.salesforce.com/5008c00000AbCdE
-// This extracts just the 15 or 18 character Case ID, reducing data transfer by ~80%
+// This extracts just the 15 or 18 character Case ID, reducing data transfer by ~80%.
+//
+// SAFETY: only URLs whose HOST is an actual Salesforce domain
+// (*.force.com / *.salesforce.com) are ever shortened. Any other URL -
+// payment links, vendor portals, anything else a coordinator might paste
+// into the Case / Event Link field - passes through completely untouched,
+// so this optimization can never corrupt or mangle a non-Salesforce link.
 function extractCaseId(fullUrl) {
   const url = String(fullUrl || '').trim();
   if (!url) return '';
@@ -492,29 +575,37 @@ function extractCaseId(fullUrl) {
   // If it doesn't look like a URL, return as-is (might already be just an ID)
   if (!url.includes('://')) return url;
 
+  const hostMatch = url.match(/^https?:\/\/([^\/]+)/i);
+  const host = hostMatch ? hostMatch[1].toLowerCase() : '';
+  const isSalesforceHost = /\.force\.com$/.test(host) || /\.salesforce\.com$/.test(host);
+  if (!isSalesforceHost) return url; // not Salesforce - never touch it
+
   // Salesforce Case IDs are 15 or 18 characters, alphanumeric starting with '500'
   // Lightning pattern: /lightning/r/Case/[ID]/view or /lightning/r/Case/[ID]
-  let match = url.match(/\/[Cc]ase\/([a-zA-Z0-9]{15,18})/);
+  let match = url.match(/\/[Cc]ase\/([a-zA-Z0-9]{15,18})(?:[\/?]|$)/);
   if (match) return match[1];
 
   // Classic pattern: /[ID] at the end or /[ID]?param
   match = url.match(/\/([5][a-zA-Z0-9]{14,17})(?:[\/?]|$)/);
   if (match) return match[1];
 
-  // If no pattern matches, store the full URL (fallback for edge cases)
+  // Salesforce host but no recognizable Case ID pattern - keep the full URL
+  // rather than guessing wrong.
   return url;
 }
 
-// Client will reconstruct the full URL using this pattern
-// This function is for server-side validation/testing only
+// Server-side reconstruction helper (used for validation/testing, and as a
+// fallback anywhere server code needs a full URL). Defaults to whatever base
+// URL is currently configured instead of a hardcoded guess.
 function reconstructCaseUrl(caseId, baseUrl) {
   if (!caseId) return '';
   // If it's already a full URL, return as-is
   if (caseId.includes('://')) return caseId;
 
-  // Default to Lightning URL format (most common)
-  baseUrl = baseUrl || 'https://yourinstance.lightning.force.com';
-  return baseUrl + '/lightning/r/Case/' + caseId + '/view';
+  const base = (baseUrl || getSalesforceBaseUrl() || '').replace(/\/+$/, '');
+  if (!base) return caseId; // not configured - nothing sensible to build
+
+  return base + '/lightning/r/Case/' + caseId + '/view';
 }
 
 // ==========================================
@@ -713,38 +804,36 @@ function getQuestionsData(requestingEmail) {
 // ==========================================
 // OPTIMIZED DATA LOADING WITH CHANGE DETECTION
 // ==========================================
-// Returns a version hash that changes whenever the sheets are modified.
-// This allows the client to avoid re-downloading unchanged data.
+// The old fingerprint here was (row count + last row's Ticket ID), which
+// only catches ADDITIONS and DELETIONS. Hold / Resume / Assign / Unassign
+// all edit a cell in an EXISTING row without changing the row count or
+// touching the last row - so those changes could silently fail to register
+// as "changed" at all, and other people's screens (or even your own, right
+// after clicking) wouldn't reliably pick them up. It also cost two sheet
+// reads (getLastRow x2 + getRange x2) on every single poll from every user.
+//
+// Fix: a single monotonically-increasing counter in Script Properties,
+// bumped once by withLock() every time ANY mutation completes (see above).
+// Checking "did anything change" is now one property read + one string
+// compare - no sheet access at all - and it can't miss an edit type, since
+// every mutating function goes through withLock.
+const CONFIG_KEY_DATA_VERSION = 'DATA_VERSION_COUNTER';
+
+function bumpDataVersion() {
+  const props = PropertiesService.getScriptProperties();
+  const current = Number(props.getProperty(CONFIG_KEY_DATA_VERSION)) || 0;
+  const next = String(current + 1);
+  props.setProperty(CONFIG_KEY_DATA_VERSION, next);
+  return next;
+}
+
 function getDataVersion() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const qSheet = ss.getSheetByName(SHEET_QUESTIONS);
-  const aSheet = ss.getSheetByName(SHEET_ANSWERED);
-
-  // Version = row count + last row's ticket ID (detects additions, deletions, and modifications)
-  const qLastRow = qSheet.getLastRow();
-  const aLastRow = aSheet.getLastRow();
-
-  let qVersion = String(qLastRow);
-  if (qLastRow > 1) {
-    const lastTicket = qSheet.getRange(qLastRow, Q_COL.TICKET_ID).getValue();
-    qVersion = qLastRow + '_' + String(lastTicket).substring(0, 8);
-  }
-
-  let aVersion = String(aLastRow);
-  if (aLastRow > 1) {
-    const lastTicket = aSheet.getRange(aLastRow, A_COL.TICKET_ID).getValue();
-    aVersion = aLastRow + '_' + String(lastTicket).substring(0, 8);
-  }
-
-  return {
-    questionsVersion: qVersion,
-    answeredVersion: aVersion
-  };
+  return PropertiesService.getScriptProperties().getProperty(CONFIG_KEY_DATA_VERSION) || '0';
 }
 
 // Wrapper around getQuestionsData that implements change detection.
 // If clientVersion matches serverVersion, returns { unchanged: true } without fetching data.
-// Otherwise returns { unchanged: false, data: [...], version: {...} }
+// Otherwise returns { unchanged: false, data: [...], version: '...' }
 function getQuestionsDataIfChanged(requestingEmail, clientVersion) {
   ensureSheetsExist();
   requireTeamMember(requestingEmail);
@@ -752,9 +841,7 @@ function getQuestionsDataIfChanged(requestingEmail, clientVersion) {
   const serverVersion = getDataVersion();
 
   // If client version matches server version, nothing has changed
-  if (clientVersion &&
-      clientVersion.questionsVersion === serverVersion.questionsVersion &&
-      clientVersion.answeredVersion === serverVersion.answeredVersion) {
+  if (clientVersion && clientVersion === serverVersion) {
     return { unchanged: true, version: serverVersion };
   }
 

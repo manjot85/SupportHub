@@ -86,6 +86,10 @@ Sign In to Portal &rarr;
 <div>
 <span id="user-role-tag" class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-400 text-slate-950">Coordinator</span>
 </div>
+<button onclick="manualRefresh()" id="manual-refresh-btn" title="Refresh now" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-md text-slate-300 font-semibold transition ml-2 flex items-center gap-1">
+<svg id="manual-refresh-icon" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+<span>Refresh</span>
+</button>
 <button onclick="logoutToLogin()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-md text-slate-300 font-semibold transition ml-2">Logout</button>
 </div>
 </div>
@@ -512,6 +516,29 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 
 <!-- TAB 6: TEAM SETUP -->
 <section id="view-team" class="hidden space-y-6">
+
+<!-- SALESFORCE CASE LINK SETUP (Admin-only) -->
+<!-- Fixes the broken case-link reconstruction: the client used to guess a
+     hardcoded base URL ("nora-x8.lightning.force.com") which almost never
+     matched a real org's domain, so links opened relative to the app's own
+     sandboxed iframe URL instead of Salesforce. The real base URL now lives
+     server-side (Script Properties) and is either set here explicitly, or
+     auto-detected the first time anyone submits a real, full Salesforce
+     link (see autoDetectSalesforceBaseUrl in Code.gs). This card is only
+     shown to Admins - see finishLogin() toggling #sf-config-card. -->
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80 hidden" id="sf-config-card">
+<h2 class="text-base font-bold text-slate-800 mb-1">Salesforce Case Link Setup</h2>
+<p class="text-xs text-slate-500 mb-4">Set this once so every Case / Event link opens directly instead of showing just the raw Case ID. It's usually auto-detected the first time anyone submits a real Salesforce link — only set it manually if that hasn't happened yet or it detected the wrong domain.</p>
+<div class="flex flex-col md:flex-row gap-3 items-start md:items-end">
+<div class="flex-1 w-full">
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Salesforce Base URL</label>
+<input type="text" id="sf-base-url-input" placeholder="https://yourcompany.lightning.force.com" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+<p class="text-[10px] text-slate-400 mt-1">No trailing path — just the scheme and domain, e.g. https://yourcompany.lightning.force.com</p>
+</div>
+<button onclick="saveSalesforceBaseUrl()" class="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-md transition shrink-0">Save</button>
+</div>
+</div>
+
 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
 <h2 class="text-base font-bold text-slate-800 mb-4">Add / Edit Team Member</h2>
 <form id="team-form" onsubmit="handleTeamSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -831,6 +858,7 @@ const TEAM_FETCH_INTERVAL_MS = 120000;
 // Change detection and adaptive polling state
 let currentDataVersion = null;
 let consecutiveNoChanges = 0;
+let manualRefreshInFlight = false;
 
 let activeModalTicketId = null;
 let activeViewQuestion = null;
@@ -861,27 +889,70 @@ const REFRESH_INTERVAL_MS = 30000;
 const APP_TIMEZONE = 'America/Chicago';
 
 // ============================================================================
-// URL OPTIMIZATION: Salesforce URL Reconstruction
+// SALESFORCE CASE LINK RECONSTRUCTION
 // ============================================================================
 // Server sends only the Case ID (15-18 chars) instead of full URL (~100+ chars)
-// Reduces data transfer by ~80% per ticket
-let SALESFORCE_BASE_URL = 'https://nora-x8.lightning.force.com'; // Default, can be customized
+// to keep data transfer small. The client rebuilds the full URL for display.
+//
+// IMPORTANT: this is NOT hardcoded anymore. It used to default to a guessed
+// domain ("https://nora-x8.lightning.force.com") which almost never matched
+// a real org's Salesforce instance - so reconstructed links pointed at a
+// domain that doesn't exist, and clicking them fell back to resolving
+// relative to the app's own sandboxed iframe URL instead of Salesforce.
+//
+// The real value now comes from the server (Script Properties), loaded once
+// at boot via loadAppConfig(), and is either set explicitly by an Admin
+// (Team Setup tab) or auto-detected the first time anyone submits a real,
+// full Salesforce URL (see handleQuestionSubmit()).
+let SALESFORCE_BASE_URL = '';
 
 function reconstructCaseUrl(caseId) {
   if (!caseId) return '';
-  // If it's already a full URL (fallback for edge cases), return as-is
+  // If it's already a full URL (fallback for edge cases / legacy rows), return as-is
   if (caseId.includes('://')) return caseId;
+  // Not configured yet - show the raw ID rather than building a dead link.
+  if (!SALESFORCE_BASE_URL) return caseId;
   // Reconstruct Lightning URL format
   return SALESFORCE_BASE_URL + '/lightning/r/Case/' + caseId + '/view';
 }
 
-// Helper to detect and auto-configure Salesforce base URL from first full URL seen
-function detectSalesforceBase(fullUrl) {
-  if (!fullUrl || !fullUrl.includes('://')) return;
-  const match = fullUrl.match(/(https?:\/\/[^\/]+)/);
-  if (match && match[1].includes('force.com')) {
-    SALESFORCE_BASE_URL = match[1];
-  }
+// Pulls the current Salesforce base URL from the server once at boot (and
+// again after Team Setup saves it), and populates the Admin config field.
+function loadAppConfig() {
+  google.script.run.withSuccessHandler(cfg => {
+    SALESFORCE_BASE_URL = (cfg && cfg.salesforceBaseUrl) || '';
+    const input = document.getElementById('sf-base-url-input');
+    if (input) input.value = SALESFORCE_BASE_URL;
+  }).withFailureHandler(() => { /* non-fatal - links just show raw IDs until this succeeds */ }).getAppConfig();
+}
+
+// Admin-only save handler for the Team Setup config card.
+function saveSalesforceBaseUrl() {
+  const val = (document.getElementById('sf-base-url-input').value || '').trim();
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not save: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(res => {
+    SALESFORCE_BASE_URL = (res && res.salesforceBaseUrl) || val.replace(/\/+$/, '');
+    showToast('Salesforce base URL saved. Case links will open directly now.');
+    renderCurrentTab();
+  }).setSalesforceBaseUrl(val, currentUser.email);
+}
+
+// Fire-and-forget: if nothing is configured yet, and the person just
+// submitted a real, full Salesforce URL, remember its domain automatically
+// so nobody has to hunt it down and paste it into Team Setup by hand. Safe
+// to call every time - it's a no-op once a base URL is already configured.
+function maybeAutoDetectSalesforceBase(fullUrl) {
+  if (!fullUrl || !fullUrl.includes('://') || SALESFORCE_BASE_URL) return;
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.changed && res.base) {
+      SALESFORCE_BASE_URL = res.base;
+      const input = document.getElementById('sf-base-url-input');
+      if (input) input.value = res.base;
+      showToast('Case links are now configured to open automatically.');
+      renderCurrentTab();
+    }
+  }).withFailureHandler(() => { /* non-fatal, silent */ }).autoDetectSalesforceBaseUrl(fullUrl, currentUser.email);
 }
 
 // ============================================================================
@@ -1319,6 +1390,7 @@ window.onload = function() {
   document.getElementById('current-date').innerText =
     new Date().toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' · CST';
   initCustomDialog();
+  loadAppConfig();
   google.script.run.withSuccessHandler(team => {
     teamMembers = normalizeTeamMembers(team || []);
     populateLoginDropdown();
@@ -1396,6 +1468,10 @@ function finishLogin(member) {
   document.getElementById('tab-reporting').classList.toggle('hidden', !support);
   document.getElementById('tab-team').classList.toggle('hidden', !support);
   document.getElementById('all-admin-th').classList.toggle('hidden', !isAdminUser(member));
+
+  // Salesforce base-URL config card is Admin-only.
+  const sfCard = document.getElementById('sf-config-card');
+  if (sfCard) sfCard.classList.toggle('hidden', !isAdminUser(member));
 
   // Internal Support Questions Only scope option is only meaningful (and only
   // shown) for Support/Admin users, since Coordinators never see internal tickets.
@@ -1541,6 +1617,63 @@ function scheduleNextRefresh() {
   refreshTimer = setTimeout(refreshData, interval);
 }
 
+// On-demand refresh for the header button. Cancels whatever poll was
+// scheduled, hits the server immediately, and resets the adaptive backoff
+// (consecutiveNoChanges) since an explicit request means the person wants
+// fast updates right now, not the idle 45-60s cadence.
+function manualRefresh() {
+  if (!currentUser || manualRefreshInFlight) return;
+  manualRefreshInFlight = true;
+  const icon = document.getElementById('manual-refresh-icon');
+  if (icon) icon.classList.add('animate-spin');
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+
+  google.script.run.withSuccessHandler(response => {
+    manualRefreshInFlight = false;
+    if (icon) icon.classList.remove('animate-spin');
+    currentDataVersion = response.version;
+    consecutiveNoChanges = 0;
+    if (!response.unchanged) {
+      allQuestions = response.data || [];
+      updateTickers();
+      renderCurrentTab();
+    }
+    scheduleNextRefresh();
+  }).withFailureHandler(err => {
+    manualRefreshInFlight = false;
+    if (icon) icon.classList.remove('animate-spin');
+    showToast('Could not refresh: ' + (err && err.message ? err.message : err));
+    scheduleNextRefresh();
+  }).getQuestionsDataIfChanged(currentUser.email, currentDataVersion);
+}
+
+// ----------------------------------------------------------------------------
+// OPTIMISTIC UPDATES
+// ----------------------------------------------------------------------------
+// Supervisor Desk actions (Submit & Move to Answered, Hold, Resume, Assign,
+// Unassign, bulk assign) used to wait on the mutation call to finish, THEN
+// fire a second, separate refreshData() round-trip that re-reads and
+// re-sends the whole ticket list, before the screen changed at all. That
+// double round-trip was the source of the 6-8s lag.
+//
+// These actions now update the local allQuestions array and re-render
+// immediately - the person sees the result of their click instantly - while
+// the real server call runs quietly in the background. If it succeeds, a
+// quiet refreshData() reconciles any server-computed details (exact
+// timestamps, turnaround hours, etc.) without the person waiting on it. If
+// it fails, the optimistic change is rolled back and they're told why.
+function snapshotQuestions() {
+  return JSON.parse(JSON.stringify(allQuestions));
+}
+
+function revertOptimistic(snapshot, errMessage) {
+  allQuestions = snapshot;
+  updateTickers();
+  renderCurrentTab();
+  showToast(errMessage);
+  refreshData();
+}
+
 function updateTickers() {
   const userIsSupport = isSupportUser(currentUser);
   const unread = allQuestions.filter(q =>
@@ -1648,6 +1781,9 @@ async function handleQuestionSubmit(e) {
     document.getElementById('question-form').reset();
     editorEl.innerHTML = '';
     document.getElementById('inp-assigned-email').value = '';
+    // If this was a real, full Salesforce URL and no base URL is configured
+    // yet, this will silently learn it so future links open directly.
+    maybeAutoDetectSalesforceBase(caseLink);
     refreshData();
     showToast('Question submitted successfully!');
   }).submitQuestion({
@@ -2102,11 +2238,12 @@ async function submitEditModal() {
   const sheet = document.getElementById('edit-sheet').value;
   const ticketId = document.getElementById('edit-ticket-id').value;
   const isAnswered = sheet === 'Answered';
+  const caseLinkVal = document.getElementById('edit-case-link').value;
 
   const updates = {
     eventName: document.getElementById('edit-event-name').value,
     question: ensureExternalLinks(document.getElementById('edit-question').innerHTML),
-    caseLink: document.getElementById('edit-case-link').value,
+    caseLink: caseLinkVal,
     expected: editSnapshot || {}
   };
   if (isAnswered) {
@@ -2120,6 +2257,7 @@ async function submitEditModal() {
     showToast('Could not save changes: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     closeEditModal();
+    maybeAutoDetectSalesforceBase(caseLinkVal);
     refreshData();
     showToast('Record updated successfully!');
   })[fnName](ticketId, updates, currentUser.email);
@@ -2634,20 +2772,41 @@ function renderSupervisorDesk() {
 async function assignToMe(ticketId) {
   const notes = await customPrompt('Assign this question to yourself? You can add an optional note for the next supervisor (shown in the question detail).', { placeholder: 'Optional note...', okLabel: 'Assign to Me' });
   if (notes === null) return;
+
+  const snapshot = snapshotQuestions();
+  const cleanNotes = notes.trim();
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (q) {
+    q.assignedTo = currentUser.email.toLowerCase();
+    if (cleanNotes) {
+      const stamp = formatCSTDateTime(new Date(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const entry = '[Assign to ' + currentUser.name + ' · ' + stamp + ' CST by ' + currentUser.name + ']: ' + cleanNotes;
+      q.assignNotes = q.assignNotes ? q.assignNotes + '\n\n' + entry : entry;
+    }
+    renderCurrentTab();
+    showToast('Assigned to you.');
+  }
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not assign: ' + (err && err.message ? err.message : err));
+    revertOptimistic(snapshot, 'Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
-    showToast('Assigned to you.');
-  }).assignQuestion(ticketId, currentUser.email, currentUser.email, notes.trim());
+  }).assignQuestion(ticketId, currentUser.email, currentUser.email, cleanNotes);
 }
 
 function unassignTicket(ticketId) {
+  const snapshot = snapshotQuestions();
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (q) {
+    q.assignedTo = '';
+    renderCurrentTab();
+    showToast('Ticket returned to the shared queue.');
+  }
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not unassign: ' + (err && err.message ? err.message : err));
+    revertOptimistic(snapshot, 'Could not unassign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
-    showToast('Ticket returned to the shared queue.');
   }).unassignQuestion(ticketId, currentUser.email);
 }
 
@@ -2655,22 +2814,48 @@ async function holdTicket(ticketId) {
   const reason = await customPrompt('Why is this ticket going on hold?', { placeholder: 'e.g. Waiting on client reply...' });
   if (reason === null) return;
   if (!reason.trim()) { await customAlert('A hold reason is required.'); return; }
+
+  const snapshot = snapshotQuestions();
+  const cleanReason = reason.trim();
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (q) {
+    const alreadyOnHold = q.status === 'Hold';
+    const stamp = formatCSTDateTime(new Date(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const entry = '[' + (alreadyOnHold ? 'Hold reason updated' : 'Put on hold') + ' by ' + currentUser.name + ' · ' + stamp + ' CST]: ' + cleanReason;
+    q.holdReason = (alreadyOnHold && q.holdReason) ? q.holdReason + '\n\n' + entry : entry;
+    if (!alreadyOnHold) {
+      q.status = 'Hold';
+      q.holdSince = new Date().toISOString();
+    }
+    renderCurrentTab();
+    showToast('Ticket placed on hold.');
+  }
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not hold: ' + (err && err.message ? err.message : err));
+    revertOptimistic(snapshot, 'Could not hold: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
-    showToast('Ticket placed on hold.');
-  }).holdQuestion(ticketId, reason.trim(), currentUser.email);
+  }).holdQuestion(ticketId, cleanReason, currentUser.email);
 }
 
 async function resumeTicket(ticketId) {
   const confirmed = await customConfirm('Resume this ticket from hold?', { okLabel: 'Resume' });
   if (!confirmed) return;
+
+  const snapshot = snapshotQuestions();
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (q) {
+    q.status = 'Open';
+    q.holdReason = '';
+    q.holdSince = '';
+    renderCurrentTab();
+    showToast('Ticket resumed.');
+  }
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not resume: ' + (err && err.message ? err.message : err));
+    revertOptimistic(snapshot, 'Could not resume: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     refreshData();
-    showToast('Ticket resumed.');
   }).resumeQuestion(ticketId, currentUser.email);
 }
 
@@ -2700,13 +2885,30 @@ async function submitBulkAssign() {
   const assigneeName = getUserDisplayName(assignee);
   const notes = await customPrompt('Assign ' + ids.length + ' selected ticket(s) to ' + assigneeName + '? You can add an optional note (shown in the question details).', { placeholder: 'Optional note...', okLabel: 'Assign' });
   if (notes === null) return;
+
+  const snapshot = snapshotQuestions();
+  const cleanNotes = notes.trim();
+  const stamp = formatCSTDateTime(new Date(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  ids.forEach(id => {
+    const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === id);
+    if (!q) return;
+    q.assignedTo = assignee.toLowerCase();
+    if (cleanNotes) {
+      const entry = '[Assign to ' + assigneeName + ' · ' + stamp + ' CST by ' + currentUser.name + ']: ' + cleanNotes;
+      q.assignNotes = q.assignNotes ? q.assignNotes + '\n\n' + entry : entry;
+    }
+  });
+
+  supSelected.clear();
+  updateTickers();
+  renderCurrentTab();
+  showToast('Assigned ' + ids.length + ' ticket(s).');
+
   google.script.run.withFailureHandler(err => {
-    showToast('Bulk assign failed: ' + (err && err.message ? err.message : err));
-  }).withSuccessHandler(res => {
-    supSelected.clear();
+    revertOptimistic(snapshot, 'Bulk assign failed: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
     refreshData();
-    showToast('Assigned ' + (res && res.updated != null ? res.updated : ids.length) + ' ticket(s).');
-  }).assignQuestionsBulk(ids, assignee, currentUser.email, notes.trim());
+  }).assignQuestionsBulk(ids, assignee, currentUser.email, cleanNotes);
 }
 
 function openAnswerModal(ticketId) {
@@ -2762,14 +2964,38 @@ async function submitModalAnswer() {
 
   if (!ansText) { await customAlert('Please write an answer before submitting.'); return; }
 
+  const ticketId = activeModalTicketId;
+  const snapshot = snapshotQuestions();
+  const idx = allQuestions.findIndex(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+
+  if (idx !== -1) {
+    // Optimistic: move the ticket from Questions Tracker to Answered right
+    // now. Server-computed fields (exact turnaround hours, etc.) settle in
+    // moments later via the background refreshData() below.
+    const q = allQuestions[idx];
+    const now = new Date();
+    const createdDate = new Date(q.created);
+    const elapsedHours = Math.max(0.1, (now - createdDate) / (1000 * 60 * 60));
+    allQuestions.splice(idx, 1);
+    allQuestions.push({
+      id: 'A_' + ticketId, ticketId: ticketId, sheet: 'Answered',
+      question: q.question, eventName: q.eventName, askedBy: q.askedBy, askedByEmail: q.askedByEmail,
+      created: q.created, answeredDate: now.toISOString(), turnaroundHours: elapsedHours.toFixed(1),
+      holdHoursExcluded: 0, caseLink: q.caseLink, answer: ansHtml, status: 'Answered',
+      answeredBy: currentUser.name, priority: 'Resolved', hoursElapsed: 0, isRead: false
+    });
+  }
+
+  closeAnswerModal();
+  updateTickers();
+  renderCurrentTab();
+  showToast('Answer submitted successfully!');
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not submit answer: ' + (err && err.message ? err.message : err));
-    refreshData();
+    revertOptimistic(snapshot, 'Could not submit answer: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
-    closeAnswerModal();
     refreshData();
-    showToast('Answer submitted successfully!');
-  }).answerQuestion(activeModalTicketId, ansHtml, currentUser.email, currentUser.name);
+  }).answerQuestion(ticketId, ansHtml, currentUser.email, currentUser.name);
 }
 
 async function putOnHold() {
@@ -2814,13 +3040,30 @@ async function submitModalAssign() {
   const assigneeName = getUserDisplayName(assigneeEmail);
   const notes = await customPrompt('Assign this question to ' + assigneeName + '? You can add an optional note for them (shown in the question detail).', { placeholder: 'Optional note...', okLabel: 'Assign' });
   if (notes === null) return;
+
+  const ticketId = activeModalTicketId;
+  const snapshot = snapshotQuestions();
+  const cleanNotes = notes.trim();
+  const q = allQuestions.find(r => r.sheet === 'Questions Tracker' && r.ticketId === ticketId);
+  if (q) {
+    q.assignedTo = assigneeEmail.toLowerCase();
+    if (cleanNotes) {
+      const stamp = formatCSTDateTime(new Date(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const entry = '[Assign to ' + assigneeName + ' · ' + stamp + ' CST by ' + currentUser.name + ']: ' + cleanNotes;
+      q.assignNotes = q.assignNotes ? q.assignNotes + '\n\n' + entry : entry;
+    }
+  }
+
+  closeAnswerModal();
+  updateTickers();
+  renderCurrentTab();
+  showToast('Question assigned successfully!');
+
   google.script.run.withFailureHandler(err => {
-    showToast('Could not assign: ' + (err && err.message ? err.message : err));
+    revertOptimistic(snapshot, 'Could not assign: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
-    closeAnswerModal();
     refreshData();
-    showToast('Question assigned successfully!');
-  }).assignQuestion(activeModalTicketId, assigneeEmail, currentUser.email, notes.trim());
+  }).assignQuestion(ticketId, assigneeEmail, currentUser.email, cleanNotes);
 }
 
 // ============================================================================
