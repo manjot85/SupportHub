@@ -539,6 +539,51 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 </div>
 </div>
 
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80 hidden" id="team-config-card">
+<div class="flex items-start justify-between gap-4 mb-5">
+<div>
+<h2 class="text-base font-bold text-slate-800">Roles &amp; Categories</h2>
+<p class="text-xs text-slate-500 mt-1">Admin-only setup. Names are editable; the Access Level keeps Coordinator, Support, and Admin permissions stable across the app.</p>
+</div>
+<span class="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-purple-50 text-purple-700 border border-purple-200/60">Admin Only</span>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+<div class="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
+<h3 class="text-sm font-bold text-slate-800 mb-3">Roles / Titles</h3>
+<form onsubmit="saveRoleConfig(event)" class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+<input type="hidden" id="config-role-id">
+<input type="text" id="config-role-name" required placeholder="e.g. Sr. Coordinator" class="md:col-span-1 border border-slate-300 p-2 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500">
+<select id="config-role-access" class="border border-slate-300 p-2 rounded-lg text-xs outline-none">
+<option value="COORDINATOR">Coordinator access</option>
+<option value="SUPPORT">Support access</option>
+</select>
+<div class="flex gap-2">
+<button type="submit" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-bold">Save Role</button>
+<button type="button" onclick="resetRoleConfigForm()" class="px-3 py-2 rounded-lg text-xs font-semibold text-slate-500 hover:bg-white">Clear</button>
+</div>
+</form>
+<div id="config-role-list" class="space-y-1.5"></div>
+</div>
+<div class="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
+<h3 class="text-sm font-bold text-slate-800 mb-3">Categories</h3>
+<form onsubmit="saveCategoryConfig(event)" class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+<input type="hidden" id="config-category-id">
+<input type="text" id="config-category-name" required placeholder="e.g. Support" class="md:col-span-1 border border-slate-300 p-2 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500">
+<select id="config-category-access" class="border border-slate-300 p-2 rounded-lg text-xs outline-none">
+<option value="COORDINATOR">Coordinator access</option>
+<option value="SUPPORT">Support access</option>
+<option value="ADMIN">Admin access</option>
+</select>
+<div class="flex gap-2">
+<button type="submit" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-bold">Save Category</button>
+<button type="button" onclick="resetCategoryConfigForm()" class="px-3 py-2 rounded-lg text-xs font-semibold text-slate-500 hover:bg-white">Clear</button>
+</div>
+</form>
+<div id="config-category-list" class="space-y-1.5"></div>
+</div>
+</div>
+</div>
+
 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
 <h2 class="text-base font-bold text-slate-800 mb-4">Add / Edit Team Member</h2>
 <form id="team-form" onsubmit="handleTeamSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -550,12 +595,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <div>
 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Title *</label>
 <select id="team-title" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs outline-none">
-<option value="Coordinator">Coordinator</option>
-<option value="Sr. Coordinator">Sr. Coordinator</option>
-<option value="Supervisor">Supervisor</option>
-<option value="Escalation Supervisor">Escalation Supervisor</option>
-<option value="Assistant Manager">Assistant Manager</option>
-<option value="Manager">Manager</option>
+<option value="">Loading roles...</option>
 </select>
 </div>
 <div>
@@ -568,9 +608,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <div>
 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Category *</label>
 <select id="team-category" onchange="toggleTeamPasswordField()" class="w-full border border-slate-300 p-2.5 rounded-xl text-xs outline-none">
-<option value="Coordinator">Coordinator</option>
-<option value="Support">Support</option>
-<option value="Admin">Admin</option>
+<option value="">Loading categories...</option>
 </select>
 </div>
 <div>
@@ -850,6 +888,9 @@ This ticket has not been answered yet.
 let currentUser = null;
 let allQuestions = [];
 let teamMembers = [];
+let teamConfig = { roles: [], categories: [] };
+let teamConfigLoaded = false;
+let teamConfigLoading = false;
 let currentTab = 'coordinator';
 let refreshTimer = null;
 let lastTeamFetch = 0;
@@ -1167,14 +1208,23 @@ function getUserDisplayName(val) {
   return match ? match.name : stripNoraPrefix(val);
 }
 
-const SUPERVISOR_TITLES = ['Manager', 'Assistant Manager', 'Supervisor', 'Escalation Supervisor'];
+const CLIENT_ACCESS_RANK = { COORDINATOR: 1, SUPPORT: 2, ADMIN: 3 };
+const LEGACY_SUPERVISOR_TITLES = ['Manager', 'Assistant Manager', 'Supervisor', 'Escalation Supervisor'];
+function memberAccessLevel(m) {
+  if (!m) return 'COORDINATOR';
+  const explicit = String(m.accessLevel || '').trim().toUpperCase();
+  if (CLIENT_ACCESS_RANK[explicit]) return explicit;
+  // Backward-compatible fallback for a temporarily stale Apps Script deployment.
+  if (String(m.category || '').toLowerCase() === 'admin') return 'ADMIN';
+  if (String(m.category || '').toLowerCase() === 'support' || LEGACY_SUPERVISOR_TITLES.includes(m.title)) return 'SUPPORT';
+  return 'COORDINATOR';
+}
 function isSupportUser(m) {
-  if (!m) return false;
-  if (String(m.status).toLowerCase() !== 'active') return false;
-  return m.category === 'Support' || m.category === 'Admin' || SUPERVISOR_TITLES.includes(m.title);
+  if (!m || String(m.status).toLowerCase() !== 'active') return false;
+  return CLIENT_ACCESS_RANK[memberAccessLevel(m)] >= CLIENT_ACCESS_RANK.SUPPORT;
 }
 function isAdminUser(m) {
-  return !!m && m.category === 'Admin' && String(m.status).toLowerCase() === 'active';
+  return !!m && String(m.status).toLowerCase() === 'active' && memberAccessLevel(m) === 'ADMIN';
 }
 
 // Live-roster lookup: true when the person who asked a given ticket is
@@ -1195,7 +1245,7 @@ function findAskerTeamMember(q) {
 }
 function isAskedBySupport(q) {
   const member = findAskerTeamMember(q);
-  return !!member && (member.category === 'Support' || member.category === 'Admin');
+  return !!member && CLIENT_ACCESS_RANK[memberAccessLevel(member)] >= CLIENT_ACCESS_RANK.SUPPORT;
 }
 function internalBadgeHtml() {
   return ' <span class="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-purple-50 text-purple-700 border border-purple-200/60">Internal Support</span>';
@@ -1391,8 +1441,14 @@ window.onload = function() {
     new Date().toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' · CST';
   initCustomDialog();
   loadAppConfig();
-  google.script.run.withSuccessHandler(team => {
+  google.script.run.withFailureHandler(err => {
+    const select = document.getElementById('login-user-select');
+    if (select) select.innerHTML = '<option value="">Unable to load roster — refresh the page</option>';
+    const msg = (err && err.message) ? err.message : String(err || 'Unknown roster error');
+    console.error('Support Hub roster load failed:', msg);
+  }).withSuccessHandler(team => {
     teamMembers = normalizeTeamMembers(team || []);
+    lastTeamFetch = Date.now();
     populateLoginDropdown();
   }).getTeamMembers();
 };
@@ -1414,7 +1470,7 @@ function populateLoginDropdown() {
 function toggleLoginPasswordField() {
   const email = document.getElementById('login-user-select').value;
   const member = teamMembers.find(m => m.email === email);
-  const isAdmin = member && member.category === 'Admin';
+  const isAdmin = isAdminUser(member);
   document.getElementById('login-password-row').classList.toggle('hidden', !isAdmin);
   document.getElementById('login-error-msg').classList.add('hidden');
 }
@@ -1429,7 +1485,7 @@ function executeLogin(e) {
   const errEl = document.getElementById('login-error-msg');
   errEl.classList.add('hidden');
 
-  if (member.category === 'Admin') {
+  if (isAdminUser(member)) {
     const pw = document.getElementById('login-password-input').value;
     btn.disabled = true;
     btn.innerText = 'Verifying...';
@@ -1457,7 +1513,7 @@ function finishLogin(member) {
   const roleTag = document.getElementById('user-role-tag');
   roleTag.innerText = member.category;
   roleTag.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase ' +
-    (member.category === 'Admin' ? 'bg-purple-400 text-slate-950'
+    (isAdminUser(member) ? 'bg-purple-400 text-slate-950'
       : isSupportUser(member) ? 'bg-amber-400 text-slate-950'
       : 'bg-emerald-400 text-slate-950');
   document.getElementById('log-filter-user').innerText = member.name;
@@ -1472,6 +1528,8 @@ function finishLogin(member) {
   // Salesforce base-URL config card is Admin-only.
   const sfCard = document.getElementById('sf-config-card');
   if (sfCard) sfCard.classList.toggle('hidden', !isAdminUser(member));
+  const teamConfigCard = document.getElementById('team-config-card');
+  if (teamConfigCard) teamConfigCard.classList.toggle('hidden', !isAdminUser(member));
 
   // Internal Support Questions Only scope option is only meaningful (and only
   // shown) for Support/Admin users, since Coordinators never see internal tickets.
@@ -1530,8 +1588,13 @@ function logoutToLogin() {
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-overlay').classList.remove('hidden');
 
-  google.script.run.withSuccessHandler(team => {
+  google.script.run.withFailureHandler(err => {
+    const select = document.getElementById('login-user-select');
+    if (select) select.innerHTML = '<option value="">Unable to load roster — refresh the page</option>';
+    console.error('Support Hub roster reload failed:', err);
+  }).withSuccessHandler(team => {
     teamMembers = normalizeTeamMembers(team || []);
+    lastTeamFetch = Date.now();
     populateLoginDropdown();
   }).getTeamMembers();
 }
@@ -1553,6 +1616,10 @@ function switchTab(name) {
       tab.classList.toggle('text-slate-400', t !== name);
     }
   });
+  if (name === 'team' && isSupportUser(currentUser) && !teamConfigLoaded) {
+    loadTeamConfiguration(() => renderCurrentTab());
+    return;
+  }
   renderCurrentTab();
 }
 
@@ -1562,7 +1629,7 @@ function renderCurrentTab() {
   else if (currentTab === 'all-tickets') renderAllTickets();
   else if (currentTab === 'supervisor') renderSupervisorDesk();
   else if (currentTab === 'reporting') renderReporting();
-  else if (currentTab === 'team') renderTeamTable();
+  else if (currentTab === 'team') { renderTeamTable(); renderTeamConfig(); }
 }
 
 function refreshData() {
@@ -1584,8 +1651,11 @@ function refreshData() {
       scheduleNextRefresh();
     }
   }).withFailureHandler(err => {
-    // On error, fall back to standard polling
+    // Never fail silently after a successful login. Keep the app usable, show
+    // the actual server error, and force the next poll to request a full copy.
     console.error('Data refresh failed:', err);
+    currentDataVersion = null;
+    showToast('Could not load ticket data: ' + (err && err.message ? err.message : err));
     scheduleNextRefresh();
   }).getQuestionsDataIfChanged(currentUser.email, currentDataVersion);
 
@@ -1597,6 +1667,8 @@ function refreshData() {
     google.script.run.withSuccessHandler(team => {
       teamMembers = normalizeTeamMembers(team || []);
       populateFilterDropdowns();
+      if (currentTab === 'team' && teamConfigLoaded) populateTeamSetupDropdowns();
+      if (currentTab === 'team') renderTeamTable();
     }).getTeamMembers();
   }
 }
@@ -3269,18 +3341,117 @@ function filterReport(type) {
 // ============================================================================
 // TAB 6: TEAM SETUP
 // ============================================================================
+function loadTeamConfiguration(callback) {
+  if (teamConfigLoaded) {
+    populateTeamSetupDropdowns();
+    renderTeamConfig();
+    if (callback) callback(true);
+    return;
+  }
+  if (teamConfigLoading) {
+    // A Team Setup load is already in flight. Avoid duplicate Apps Script calls;
+    // retry the local callback shortly after that request completes.
+    setTimeout(() => loadTeamConfiguration(callback), 100);
+    return;
+  }
+  teamConfigLoading = true;
+  google.script.run.withFailureHandler(err => {
+    teamConfigLoading = false;
+    console.error('Could not load Team Configuration:', err);
+    showToast('Could not load Roles/Categories: ' + (err && err.message ? err.message : err));
+    if (callback) callback(false);
+  }).withSuccessHandler(cfg => {
+    teamConfigLoading = false;
+    teamConfigLoaded = true;
+    teamConfig = cfg || { roles: [], categories: [] };
+    teamConfig.roles = teamConfig.roles || [];
+    teamConfig.categories = teamConfig.categories || [];
+    populateTeamSetupDropdowns();
+    renderTeamConfig();
+    if (callback) callback(true);
+  }).getTeamConfiguration();
+}
+
+function refreshTeamRosterAndConfig(message) {
+  teamConfigLoaded = false;
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not refresh team roster: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(team => {
+    teamMembers = normalizeTeamMembers(team || []);
+    populateLoginDropdown();
+    populateFilterDropdowns();
+    loadTeamConfiguration(() => {
+      renderTeamTable();
+      if (message) showToast(message);
+    });
+  }).getTeamMembers();
+}
+
+function accessLabel(level) {
+  const clean = String(level || '').toUpperCase();
+  if (clean === 'ADMIN') return 'Admin';
+  if (clean === 'SUPPORT') return 'Support';
+  return 'Coordinator';
+}
+
+function categoryAccessByName(name) {
+  const clean = String(name || '').trim().toLowerCase();
+  const item = (teamConfig.categories || []).find(c => String(c.name || '').trim().toLowerCase() === clean);
+  if (item) return String(item.accessLevel || 'COORDINATOR').toUpperCase();
+  if (clean === 'admin') return 'ADMIN';
+  if (clean === 'support') return 'SUPPORT';
+  return 'COORDINATOR';
+}
+
+function populateTeamSetupDropdowns(preferredTitle, preferredCategory) {
+  const titleSel = document.getElementById('team-title');
+  const categorySel = document.getElementById('team-category');
+  if (!titleSel || !categorySel) return;
+
+  const oldTitle = preferredTitle !== undefined ? preferredTitle : titleSel.value;
+  const oldCategory = preferredCategory !== undefined ? preferredCategory : categorySel.value;
+
+  titleSel.innerHTML = '';
+  (teamConfig.roles || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.name;
+    opt.textContent = r.name;
+    titleSel.appendChild(opt);
+  });
+  if (!titleSel.options.length) titleSel.innerHTML = '<option value="">No roles configured</option>';
+
+  categorySel.innerHTML = '';
+  (teamConfig.categories || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.name;
+    opt.textContent = c.name + ' · ' + accessLabel(c.accessLevel);
+    categorySel.appendChild(opt);
+  });
+  if (!categorySel.options.length) categorySel.innerHTML = '<option value="">No categories configured</option>';
+
+  if (oldTitle && Array.from(titleSel.options).some(o => o.value === oldTitle)) titleSel.value = oldTitle;
+  if (oldCategory && Array.from(categorySel.options).some(o => o.value === oldCategory)) categorySel.value = oldCategory;
+  toggleTeamPasswordField();
+}
+
 function renderTeamTable() {
   const body = document.getElementById('team-table-body');
   if (!body) return;
   body.innerHTML = '';
   teamMembers.forEach(m => {
+    const level = memberAccessLevel(m);
+    const categoryClass = level === 'ADMIN'
+      ? 'bg-purple-50 text-purple-700 border border-purple-200/60'
+      : level === 'SUPPORT'
+        ? 'bg-amber-50 text-amber-700 border border-amber-200/60'
+        : 'bg-blue-50 text-blue-700 border border-blue-200/60';
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-50';
     tr.innerHTML =
       '<td class="p-3 font-semibold text-slate-800">' + esc(m.name) + '</td>' +
       '<td class="p-3 text-slate-600">' + esc(m.title) + '</td>' +
       '<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase ' + (m.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-slate-100 text-slate-500 border border-slate-200/60') + '">' + esc(m.status) + '</span></td>' +
-      '<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold ' + (m.category === 'Admin' ? 'bg-purple-50 text-purple-700 border border-purple-200/60' : m.category === 'Support' ? 'bg-amber-50 text-amber-700 border border-amber-200/60' : 'bg-blue-50 text-blue-700 border border-blue-200/60') + '">' + esc(m.category) + '</span></td>' +
+      '<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold ' + categoryClass + '">' + esc(m.category) + '</span></td>' +
       '<td class="p-3 font-mono text-slate-500 truncate">' + esc(m.email) + '</td>' +
       '<td class="p-3 text-right space-x-2">' +
         '<button onclick="editTeam(\'' + esc(m.email) + '\')" class="text-blue-600 font-semibold underline text-xs">Edit</button>' +
@@ -3288,16 +3459,120 @@ function renderTeamTable() {
       '</td>';
     body.appendChild(tr);
   });
+  populateTeamSetupDropdowns();
+}
+
+function renderTeamConfig() {
+  const card = document.getElementById('team-config-card');
+  if (!card || !currentUser) return;
+  const admin = isAdminUser(currentUser);
+  card.classList.toggle('hidden', !admin);
+  if (!admin) return;
+
+  const roleList = document.getElementById('config-role-list');
+  const categoryList = document.getElementById('config-category-list');
+  if (roleList) {
+    const roles = (teamConfig.roles || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    roleList.innerHTML = roles.length ? roles.map(r =>
+      '<div class="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">' +
+        '<div class="min-w-0"><div class="text-xs font-semibold text-slate-800 truncate">' + esc(r.name) + '</div><div class="text-[10px] text-slate-400">' + esc(accessLabel(r.accessLevel)) + ' access</div></div>' +
+        '<div class="flex gap-2 shrink-0"><button onclick="editRoleConfig(\'' + esc(r.id) + '\')" class="text-[11px] font-semibold text-blue-600 underline">Edit</button>' +
+        '<button onclick="deleteConfigItem(\'' + esc(r.id) + '\', \'role\')" class="text-[11px] font-semibold text-rose-600 underline">Delete</button></div>' +
+      '</div>').join('') : '<p class="text-xs text-slate-400">No roles configured.</p>';
+  }
+  if (categoryList) {
+    const cats = (teamConfig.categories || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    categoryList.innerHTML = cats.length ? cats.map(c =>
+      '<div class="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">' +
+        '<div class="min-w-0"><div class="text-xs font-semibold text-slate-800 truncate">' + esc(c.name) + '</div><div class="text-[10px] text-slate-400">' + esc(accessLabel(c.accessLevel)) + ' access</div></div>' +
+        '<div class="flex gap-2 shrink-0"><button onclick="editCategoryConfig(\'' + esc(c.id) + '\')" class="text-[11px] font-semibold text-blue-600 underline">Edit</button>' +
+        '<button onclick="deleteConfigItem(\'' + esc(c.id) + '\', \'category\')" class="text-[11px] font-semibold text-rose-600 underline">Delete</button></div>' +
+      '</div>').join('') : '<p class="text-xs text-slate-400">No categories configured.</p>';
+  }
+}
+
+function resetRoleConfigForm() {
+  document.getElementById('config-role-id').value = '';
+  document.getElementById('config-role-name').value = '';
+  document.getElementById('config-role-access').value = 'COORDINATOR';
+}
+function resetCategoryConfigForm() {
+  document.getElementById('config-category-id').value = '';
+  document.getElementById('config-category-name').value = '';
+  document.getElementById('config-category-access').value = 'COORDINATOR';
+}
+function editRoleConfig(id) {
+  const item = (teamConfig.roles || []).find(r => r.id === id);
+  if (!item) return;
+  document.getElementById('config-role-id').value = item.id;
+  document.getElementById('config-role-name').value = item.name;
+  document.getElementById('config-role-access').value = item.accessLevel;
+  document.getElementById('config-role-name').focus();
+}
+function editCategoryConfig(id) {
+  const item = (teamConfig.categories || []).find(c => c.id === id);
+  if (!item) return;
+  document.getElementById('config-category-id').value = item.id;
+  document.getElementById('config-category-name').value = item.name;
+  document.getElementById('config-category-access').value = item.accessLevel;
+  document.getElementById('config-category-name').focus();
+}
+
+function saveRoleConfig(e) {
+  e.preventDefault();
+  if (!isAdminUser(currentUser)) return;
+  const item = {
+    id: document.getElementById('config-role-id').value || null,
+    type: 'ROLE',
+    name: document.getElementById('config-role-name').value,
+    accessLevel: document.getElementById('config-role-access').value
+  };
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not save role: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    resetRoleConfigForm();
+    refreshTeamRosterAndConfig('Role saved.');
+  }).saveTeamConfigItem(item, currentUser.email);
+}
+
+function saveCategoryConfig(e) {
+  e.preventDefault();
+  if (!isAdminUser(currentUser)) return;
+  const item = {
+    id: document.getElementById('config-category-id').value || null,
+    type: 'CATEGORY',
+    name: document.getElementById('config-category-name').value,
+    accessLevel: document.getElementById('config-category-access').value
+  };
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not save category: ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    resetCategoryConfigForm();
+    refreshTeamRosterAndConfig('Category saved.');
+  }).saveTeamConfigItem(item, currentUser.email);
+}
+
+async function deleteConfigItem(id, typeLabel) {
+  if (!isAdminUser(currentUser)) return;
+  const confirmed = await customConfirm('Delete this ' + typeLabel + '? It cannot be deleted while team members are using it.', { okLabel: 'Delete', danger: true });
+  if (!confirmed) return;
+  google.script.run.withFailureHandler(err => {
+    showToast('Could not delete ' + typeLabel + ': ' + (err && err.message ? err.message : err));
+  }).withSuccessHandler(() => {
+    refreshTeamRosterAndConfig((typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)) + ' deleted.');
+  }).deleteTeamConfigItem(id, currentUser.email);
 }
 
 function toggleTeamPasswordField() {
-  const isAdminCategory = document.getElementById('team-category').value === 'Admin';
+  const category = document.getElementById('team-category').value;
+  const isAdminCategory = categoryAccessByName(category) === 'ADMIN';
   document.getElementById('team-password-row').classList.toggle('hidden', !isAdminCategory);
 }
 
 function resetTeamForm() {
   document.getElementById('team-form').reset();
   document.getElementById('team-original-email').value = '';
+  populateTeamSetupDropdowns();
   toggleTeamPasswordField();
 }
 
@@ -3317,8 +3592,7 @@ function handleTeamSubmit(e) {
     showToast('Could not save: ' + (err && err.message ? err.message : err));
   }).withSuccessHandler(() => {
     resetTeamForm();
-    refreshData();
-    showToast('Team roster updated.');
+    refreshTeamRosterAndConfig('Team roster updated.');
   }).saveTeamMember(member, currentUser.email);
 }
 
@@ -3327,6 +3601,7 @@ function editTeam(email) {
   if (!m) return;
   document.getElementById('team-original-email').value = m.email;
   document.getElementById('team-name').value = m.name;
+  populateTeamSetupDropdowns(m.title, m.category);
   document.getElementById('team-title').value = m.title;
   document.getElementById('team-status').value = m.status;
   document.getElementById('team-category').value = m.category;
@@ -3341,8 +3616,7 @@ async function deleteTeam(email) {
     google.script.run.withFailureHandler(err => {
       showToast('Could not delete: ' + (err && err.message ? err.message : err));
     }).withSuccessHandler(() => {
-      refreshData();
-      showToast('Member deleted.');
+      refreshTeamRosterAndConfig('Member deleted.');
     }).deleteTeamMember(email, currentUser.email);
   }
 }
