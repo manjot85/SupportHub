@@ -2,12 +2,11 @@
 // Start
 // SUPPORT HUB — Code.gs (clean rewrite, Option A)
 // Compatible with your existing sheets: "Questions Tracker", "Answered",
-// "Team Setup" (same columns, nothing reshuffled). Adds supporting sheets that
+// "Team Setup" (same columns, nothing reshuffled). Adds two new sheets that
 // are created automatically on first run:
 //   - "Audit Log"        : who did what, when, to which ticket
 //   - "Deleted Records"  : soft-delete archive (admin deletes land here
 //                          instead of vanishing forever)
-//   - "Team Configuration": Admin-managed Roles/Categories + stable access levels
 //
 // What changed vs the old version:
 //   1. EVERY mutating function runs inside a script lock (LockService), so
@@ -43,18 +42,8 @@ const SHEET_ANSWERED   = "Answered";
 const SHEET_TEAM       = "Team Setup";
 const SHEET_AUDIT      = "Audit Log";
 const SHEET_DELETED    = "Deleted Records";
-const SHEET_TEAM_CONFIG = "Team Configuration";
 
-// Stable permission levels. Visible Role/Category names can be edited by Admins,
-// but authorization always resolves to one of these values so renaming a label
-// never breaks Coordinator, Support, or Admin behavior.
-const ACCESS_COORDINATOR = "COORDINATOR";
-const ACCESS_SUPPORT = "SUPPORT";
-const ACCESS_ADMIN = "ADMIN";
-const ACCESS_RANK = { COORDINATOR: 1, SUPPORT: 2, ADMIN: 3 };
-
-// Legacy titles are only used when seeding/migrating Team Configuration or as
-// a fallback if an old deployment has not created the config sheet yet.
+// Titles that count as "Support" (supervisor-tier) even if Category isn't set to "Support"
 const SUPERVISOR_TITLES = ["Manager", "Assistant Manager", "Supervisor", "Escalation Supervisor"];
 
 // How long a near-identical submission is treated as an accidental duplicate.
@@ -78,10 +67,9 @@ const Q_WIDTH = 18;
 const A_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, ANSWERED: 5, PRIORITY: 6,
   TURNAROUND: 7, LINK: 8, ANSWER: 9, STATUS: 10, ANSWERED_BY: 11, READ_BY: 12,
-  TICKET_ID: 13, HOLD_HOURS: 14, ASKED_BY_EMAIL: 15,
-  FIRST_READ_AT: 16, FIRST_READ_BY: 17, READ_TOGGLE_COUNT: 18
+  TICKET_ID: 13, HOLD_HOURS: 14, ASKED_BY_EMAIL: 15
 };
-const A_WIDTH = 18;
+const A_WIDTH = 15;
 
 // Canonical status values — never write anything else into the Status columns.
 const STATUS_OPEN = "Open";
@@ -167,7 +155,6 @@ function ensureSheetsExist() {
     s.appendRow(["Name", "Title", "Status", "Category", "Email", "PasswordHash", "PasswordSalt"]);
   }
 
-  ensureTeamConfigSheet(ss);
   ensureAuditSheet(ss);
   ensureDeletedSheet(ss);
 }
@@ -190,246 +177,6 @@ function ensureDeletedSheet(ss) {
     s.setFrozenRows(1);
   }
   return s;
-}
-
-
-// Team Configuration keeps editable display labels separate from authorization.
-// Columns: ID | Type (ROLE/CATEGORY) | Name | Access Level.
-function ensureTeamConfigSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_TEAM_CONFIG);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_TEAM_CONFIG);
-    sheet.appendRow(["ID", "Type", "Name", "Access Level"]);
-    sheet.setFrozenRows(1);
-  }
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) {
-    const defaults = [
-      [Utilities.getUuid(), "ROLE", "Coordinator", ACCESS_COORDINATOR],
-      [Utilities.getUuid(), "ROLE", "Sr. Coordinator", ACCESS_COORDINATOR],
-      [Utilities.getUuid(), "ROLE", "Supervisor", ACCESS_SUPPORT],
-      [Utilities.getUuid(), "ROLE", "Escalation Supervisor", ACCESS_SUPPORT],
-      [Utilities.getUuid(), "ROLE", "Assistant Manager", ACCESS_SUPPORT],
-      [Utilities.getUuid(), "ROLE", "Manager", ACCESS_SUPPORT],
-      [Utilities.getUuid(), "CATEGORY", "Coordinator", ACCESS_COORDINATOR],
-      [Utilities.getUuid(), "CATEGORY", "Support", ACCESS_SUPPORT],
-      [Utilities.getUuid(), "CATEGORY", "Admin", ACCESS_ADMIN]
-    ];
-
-    // Preserve any non-standard labels that already exist in Team Setup.
-    const teamSheet = ss.getSheetByName(SHEET_TEAM);
-    if (teamSheet && teamSheet.getLastRow() > 1) {
-      const teamData = teamSheet.getRange(2, 1, teamSheet.getLastRow() - 1, 7).getValues();
-      const seenRoles = {};
-      const seenCategories = {};
-      defaults.forEach(r => {
-        if (r[1] === 'ROLE') seenRoles[String(r[2]).toLowerCase()] = true;
-        else seenCategories[String(r[2]).toLowerCase()] = true;
-      });
-      teamData.forEach(r => {
-        const title = String(r[1] || '').trim();
-        const category = String(r[3] || '').trim();
-        if (title && !seenRoles[title.toLowerCase()]) {
-          defaults.push([Utilities.getUuid(), 'ROLE', title, legacyAccessForLabel('ROLE', title)]);
-          seenRoles[title.toLowerCase()] = true;
-        }
-        if (category && !seenCategories[category.toLowerCase()]) {
-          defaults.push([Utilities.getUuid(), 'CATEGORY', category, legacyAccessForLabel('CATEGORY', category)]);
-          seenCategories[category.toLowerCase()] = true;
-        }
-      });
-    }
-    if (defaults.length) sheet.getRange(2, 1, defaults.length, 4).setValues(defaults);
-  }
-  return sheet;
-}
-
-function normalizeAccessLevel(level) {
-  const clean = String(level || '').trim().toUpperCase();
-  return ACCESS_RANK[clean] ? clean : ACCESS_COORDINATOR;
-}
-
-function legacyAccessForLabel(type, name) {
-  const clean = String(name || '').trim();
-  if (String(type || '').toUpperCase() === 'CATEGORY') {
-    if (clean.toLowerCase() === 'admin') return ACCESS_ADMIN;
-    if (clean.toLowerCase() === 'support') return ACCESS_SUPPORT;
-    return ACCESS_COORDINATOR;
-  }
-  return SUPERVISOR_TITLES.indexOf(clean) !== -1 ? ACCESS_SUPPORT : ACCESS_COORDINATOR;
-}
-
-function getTeamConfigItemsRaw() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // IMPORTANT: read-only helpers must never create/migrate sheets. The login
-  // roster calls this path, so doing setup work here can make the very first
-  // getTeamMembers() request slow or fail. doGet()/manual setup handles sheet
-  // creation; if config is unavailable we safely fall back to legacy rules.
-  const sheet = ss.getSheetByName(SHEET_TEAM_CONFIG);
-  if (!sheet || sheet.getLastRow() <= 1) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues()
-    .filter(r => String(r[0] || '').trim() && String(r[2] || '').trim())
-    .map(r => ({
-      id: String(r[0]).trim(),
-      type: String(r[1] || '').trim().toUpperCase(),
-      name: String(r[2] || '').trim(),
-      accessLevel: normalizeAccessLevel(r[3])
-    }));
-}
-
-function buildTeamConfigMaps(items) {
-  const maps = { ROLE: {}, CATEGORY: {} };
-  (items || []).forEach(i => {
-    if (!i || !maps[i.type]) return;
-    maps[i.type][String(i.name || '').trim().toLowerCase()] = normalizeAccessLevel(i.accessLevel);
-  });
-  return maps;
-}
-
-// Safe to expose to the client: contains only labels and permission tiers.
-function getTeamConfiguration() {
-  // doGet()/manual setup owns schema creation. Team Setup only needs a fast,
-  // read-only snapshot here; CRUD functions still ensure the config sheet
-  // before writing.
-  const items = getTeamConfigItemsRaw();
-  return {
-    roles: items.filter(i => i.type === 'ROLE'),
-    categories: items.filter(i => i.type === 'CATEGORY')
-  };
-}
-
-function getConfigAccessLevel(type, name, configMaps) {
-  const cleanType = String(type || '').trim().toUpperCase();
-  const cleanName = String(name || '').trim().toLowerCase();
-  if (!cleanName) return ACCESS_COORDINATOR;
-  const maps = configMaps || buildTeamConfigMaps(getTeamConfigItemsRaw());
-  const mapped = maps[cleanType] && maps[cleanType][cleanName];
-  return mapped || legacyAccessForLabel(cleanType, name);
-}
-
-function getMemberAccessLevel(member, configMaps) {
-  if (!member) return ACCESS_COORDINATOR;
-  // Members returned by getTeamMembers()/findTeamMemberByEmail already carry
-  // a resolved accessLevel. Re-use it instead of re-reading Team Configuration
-  // again on every Support/Admin authorization check.
-  const explicit = String(member.accessLevel || '').trim().toUpperCase();
-  if (ACCESS_RANK[explicit]) return explicit;
-  const maps = configMaps || buildTeamConfigMaps(getTeamConfigItemsRaw());
-  const categoryLevel = getConfigAccessLevel('CATEGORY', member.category, maps);
-  const roleLevel = getConfigAccessLevel('ROLE', member.title, maps);
-  return (ACCESS_RANK[categoryLevel] || 1) >= (ACCESS_RANK[roleLevel] || 1) ? categoryLevel : roleLevel;
-}
-
-function validateTeamConfigSelection(type, name) {
-  const cleanType = String(type || '').trim().toUpperCase();
-  const cleanName = String(name || '').trim().toLowerCase();
-  const found = getTeamConfigItemsRaw().some(i => i.type === cleanType && i.name.toLowerCase() === cleanName);
-  if (!found) throw new Error((cleanType === 'ROLE' ? 'Role' : 'Category') + ' is no longer available. Refresh Team Setup and choose a current option.');
-}
-
-function saveTeamConfigItem(item, requestingEmail) {
-  return withLock(() => {
-    const admin = requireAdminRole(requestingEmail);
-    item = item || {};
-    const type = String(item.type || '').trim().toUpperCase();
-    const name = String(item.name || '').trim();
-    const accessLevel = normalizeAccessLevel(item.accessLevel);
-    const id = String(item.id || '').trim();
-
-    if (type !== 'ROLE' && type !== 'CATEGORY') throw new Error('Configuration type must be Role or Category.');
-    if (!name) throw new Error((type === 'ROLE' ? 'Role' : 'Category') + ' name is required.');
-    if (name.length > 80) throw new Error('Name is too long. Please keep it under 80 characters.');
-    if (type === 'ROLE' && accessLevel === ACCESS_ADMIN) throw new Error('Admin access is controlled by Category. Roles can be Coordinator or Support level only.');
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ensureTeamConfigSheet(ss);
-    const items = getTeamConfigItemsRaw();
-    const existing = id ? items.find(i => i.id === id) : null;
-    if (id && !existing) throw new Error('This configuration item no longer exists. Refresh and try again.');
-
-    const duplicate = items.find(i => i.type === type && i.name.toLowerCase() === name.toLowerCase() && i.id !== id);
-    if (duplicate) throw new Error('A ' + type.toLowerCase() + ' with that name already exists.');
-
-    if (existing && existing.type !== type) throw new Error('Configuration type cannot be changed.');
-
-    const teamSheet = ss.getSheetByName(SHEET_TEAM);
-    let affectedRows = [];
-    if (existing && teamSheet && teamSheet.getLastRow() > 1) {
-      const teamData = teamSheet.getRange(2, 1, teamSheet.getLastRow() - 1, 7).getValues();
-      const colIndex = type === 'ROLE' ? 1 : 3;
-      teamData.forEach((r, idx) => {
-        if (String(r[colIndex] || '').trim().toLowerCase() === existing.name.toLowerCase()) affectedRows.push({ row: idx + 2, values: r });
-      });
-    }
-
-    // Admin access changes on a category that is already assigned are intentionally
-    // blocked. That prevents silently turning several people into passwordless Admins
-    // or removing Admin access from the last working Admin through a bulk config edit.
-    if (existing && type === 'CATEGORY' && existing.accessLevel !== accessLevel && affectedRows.length &&
-        (existing.accessLevel === ACCESS_ADMIN || accessLevel === ACCESS_ADMIN)) {
-      throw new Error('This category is assigned to team members. Reassign those members before changing this category to or from Admin access.');
-    }
-
-    let rowIndex = -1;
-    if (existing) {
-      const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-      for (let i = 0; i < ids.length; i++) {
-        if (String(ids[i][0]).trim() === id) { rowIndex = i + 2; break; }
-      }
-    }
-
-    const finalId = existing ? existing.id : Utilities.getUuid();
-    const row = [finalId, type, name, accessLevel];
-    if (rowIndex !== -1) sheet.getRange(rowIndex, 1, 1, 4).setValues([row]);
-    else sheet.appendRow(row);
-
-    // Renaming a Role/Category migrates existing Team Setup labels in the same lock.
-    if (existing && existing.name !== name && affectedRows.length) {
-      const targetCol = type === 'ROLE' ? 2 : 4;
-      affectedRows.forEach(a => teamSheet.getRange(a.row, targetCol).setValue(name));
-    }
-
-    logAudit(existing ? 'TEAM_CONFIG_EDIT' : 'TEAM_CONFIG_ADD', admin.email, admin.name, '', {
-      id: finalId, type: type, oldName: existing ? existing.name : '', name: name,
-      oldAccessLevel: existing ? existing.accessLevel : '', accessLevel: accessLevel,
-      migratedMembers: affectedRows.length
-    });
-    return { success: true, id: finalId };
-  });
-}
-
-function deleteTeamConfigItem(id, requestingEmail) {
-  return withLock(() => {
-    const admin = requireAdminRole(requestingEmail);
-    const cleanId = String(id || '').trim();
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ensureTeamConfigSheet(ss);
-    const items = getTeamConfigItemsRaw();
-    const item = items.find(i => i.id === cleanId);
-    if (!item) throw new Error('This configuration item no longer exists. Refresh and try again.');
-
-    const sameTypeCount = items.filter(i => i.type === item.type).length;
-    if (sameTypeCount <= 1) throw new Error('You must keep at least one ' + item.type.toLowerCase() + ' option.');
-
-    const teamSheet = ss.getSheetByName(SHEET_TEAM);
-    if (teamSheet && teamSheet.getLastRow() > 1) {
-      const data = teamSheet.getRange(2, 1, teamSheet.getLastRow() - 1, 7).getValues();
-      const colIndex = item.type === 'ROLE' ? 1 : 3;
-      const used = data.some(r => String(r[colIndex] || '').trim().toLowerCase() === item.name.toLowerCase());
-      if (used) throw new Error('Cannot delete this ' + item.type.toLowerCase() + ' while team members are using it. Reassign those members first.');
-    }
-
-    const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    let rowIndex = -1;
-    for (let i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]).trim() === cleanId) { rowIndex = i + 2; break; }
-    }
-    if (rowIndex === -1) throw new Error('This configuration item no longer exists. Refresh and try again.');
-    sheet.deleteRow(rowIndex);
-    logAudit('TEAM_CONFIG_DELETE', admin.email, admin.name, '', { id: item.id, type: item.type, name: item.name, accessLevel: item.accessLevel });
-    return { success: true };
-  });
 }
 
 // One-time, idempotent migration for sheets created under the OLD (11-column) schema.
@@ -507,26 +254,6 @@ function ensureAnsweredSchema(sheet) {
       range.setValues(vals);
     }
   }
-
-  // Coordinator acknowledgement tracking. These columns are appended only;
-  // existing Answered data and column positions remain untouched.
-  lastCol = Math.max(sheet.getLastColumn(), 1);
-  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const readHeaders = [
-    ['First Read At', A_COL.FIRST_READ_AT],
-    ['First Read By', A_COL.FIRST_READ_BY],
-    ['Read Toggle Count', A_COL.READ_TOGGLE_COUNT]
-  ];
-  readHeaders.forEach(item => {
-    const label = item[0], col = item[1];
-    if (headers[col - 1] !== label) sheet.getRange(1, col).setValue(label);
-  });
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    const toggleRange = sheet.getRange(2, A_COL.READ_TOGGLE_COUNT, lastRow - 1, 1);
-    const vals = toggleRange.getValues().map(r => [r[0] === '' || r[0] == null || isNaN(r[0]) ? 0 : Number(r[0])]);
-    toggleRange.setValues(vals);
-  }
 }
 
 // ==========================================
@@ -576,39 +303,20 @@ function archiveDeletedRow(sourceSheetName, rowValues, ticketId, deletedByEmail)
 function isSupportMember(member) {
   if (!member) return false;
   if (String(member.status).toLowerCase() !== 'active') return false;
-  return (ACCESS_RANK[getMemberAccessLevel(member)] || 1) >= ACCESS_RANK[ACCESS_SUPPORT];
+  return member.category === 'Support' || member.category === 'Admin' || SUPERVISOR_TITLES.indexOf(member.title) !== -1;
 }
 
 function isAdminMember(member) {
   if (!member) return false;
   if (String(member.status).toLowerCase() !== 'active') return false;
-  return getMemberAccessLevel(member) === ACCESS_ADMIN;
+  return member.category === 'Admin';
 }
 
 function findTeamMemberByEmail(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email) return null;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_TEAM);
-  if (!sheet || sheet.getLastRow() <= 1) return null;
-
-  // Ticket reads only need to confirm that the selected profile exists and is
-  // active. Do not involve Team Configuration in this common polling path.
-  // Support/Admin authorization resolves access lazily only when a privileged
-  // action actually needs it.
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
-  for (let i = 0; i < data.length; i++) {
-    if (String(data[i][4] || '').trim().toLowerCase() === email) {
-      return {
-        name: stripNoraPrefix(String(data[i][0] || '').trim()),
-        title: String(data[i][1] || '').trim(),
-        status: String(data[i][2] || '').trim(),
-        category: String(data[i][3] || '').trim(),
-        email: email
-      };
-    }
-  }
-  return null;
+  const team = getTeamMembers();
+  return team.find(m => m.email === email) || null;
 }
 
 function requireTeamMember(email) {
@@ -634,29 +342,20 @@ function requireAdminRole(email) {
 }
 
 function getTeamMembers() {
+  ensureSheetsExist();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_TEAM);
   if (!sheet) return [];
-
-  // Read Team Configuration ONCE for the whole roster. The previous version
-  // resolved access by re-reading the config sheet for each member, which could
-  // leave the login screen stuck at "Loading roster members..." on a larger
-  // roster. If the config sheet is missing/unavailable, legacy labels still
-  // resolve exactly as they did before this feature was added.
-  const configMaps = buildTeamConfigMaps(getTeamConfigItemsRaw());
   const data = sheet.getDataRange().getValues();
   let team = [];
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] && String(data[i][0]).trim() !== "") {
-      const title = String(data[i][1] || '').trim();
-      const category = String(data[i][3] || '').trim();
       team.push({
         name: stripNoraPrefix(String(data[i][0]).trim()),
-        title: title,
-        status: String(data[i][2] || '').trim(),
-        category: category,
-        email: String(data[i][4] || '').trim().toLowerCase(),
-        accessLevel: getMemberAccessLevel({ title: title, category: category }, configMaps)
+        title: String(data[i][1]).trim(),
+        status: String(data[i][2]).trim(),
+        category: String(data[i][3]).trim(),
+        email: String(data[i][4]).trim().toLowerCase()
         // PasswordHash / PasswordSalt are deliberately omitted - this backs the
         // login dropdown and is callable before anyone is "logged in".
       });
@@ -691,16 +390,12 @@ function countWorkingAdmins() {
   const sheet = ss.getSheetByName(SHEET_TEAM);
   if (!sheet) return 0;
   const data = sheet.getDataRange().getValues();
-  const configMaps = buildTeamConfigMaps(getTeamConfigItemsRaw());
   let count = 0;
   for (let i = 1; i < data.length; i++) {
+    const category = String(data[i][3] || '').trim();
     const status = String(data[i][2] || '').trim().toLowerCase();
     const passwordHash = String(data[i][5] || '').trim();
-    const accessLevel = getMemberAccessLevel({
-      title: String(data[i][1] || '').trim(),
-      category: String(data[i][3] || '').trim()
-    }, configMaps);
-    if (accessLevel === ACCESS_ADMIN && status === 'active' && passwordHash) count++;
+    if (category === 'Admin' && status === 'active' && passwordHash) count++;
   }
   return count;
 }
@@ -713,7 +408,6 @@ function getTeamMemberRawByEmail(email) {
   const sheet = ss.getSheetByName(SHEET_TEAM);
   if (!sheet) return null;
   const data = sheet.getDataRange().getValues();
-  const configMaps = buildTeamConfigMaps(getTeamConfigItemsRaw());
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][4]).trim().toLowerCase() === email) {
       return {
@@ -723,10 +417,6 @@ function getTeamMemberRawByEmail(email) {
         status: String(data[i][2]).trim(),
         category: String(data[i][3]).trim(),
         email: email,
-        accessLevel: getMemberAccessLevel({
-          title: String(data[i][1]).trim(),
-          category: String(data[i][3]).trim()
-        }, configMaps),
         passwordHash: String(data[i][5] || '').trim(),
         passwordSalt: String(data[i][6] || '').trim()
       };
@@ -740,7 +430,7 @@ function verifyAdminPassword(email, passwordAttempt) {
   if (!member || String(member.status).toLowerCase() !== 'active') {
     throw new Error("Access denied: unrecognized or inactive user.");
   }
-  if (member.accessLevel !== ACCESS_ADMIN) {
+  if (member.category !== 'Admin') {
     throw new Error("This account is not an Admin account.");
   }
   if (!member.passwordHash) {
@@ -1011,10 +701,6 @@ function isReadByUser(raw, email) {
 function getQuestionsData(requestingEmail) {
   ensureSheetsExist();
   requireTeamMember(requestingEmail);
-  return readQuestionsDataCore(requestingEmail);
-}
-
-function readQuestionsDataCore(requestingEmail) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const qSheet = ss.getSheetByName(SHEET_QUESTIONS);
@@ -1104,21 +790,7 @@ function readQuestionsDataCore(requestingEmail) {
           answeredBy: stripNoraPrefix(String(row[10] || "Supervisor").trim()),
           priority: String(row[5] || "Resolved").trim(),
           hoursElapsed: 0,
-          // Read state is the ORIGINAL ASKER'S acknowledgement state, not the
-          // viewer's personal read state. This makes Support/Supervisor views
-          // reflect whether the coordinator has actually seen the answer.
-          isRead: isReadByUser(row[A_COL.READ_BY - 1], String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase()),
-          firstReadAt: row[A_COL.FIRST_READ_AT - 1] ? safeIsoDate(row[A_COL.FIRST_READ_AT - 1]) : "",
-          firstReadBy: stripNoraPrefix(String(row[A_COL.FIRST_READ_BY - 1] || '').trim()),
-          readToggleCount: Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0,
-          firstReadMinutes: (function() {
-            const fr = row[A_COL.FIRST_READ_AT - 1];
-            if (!fr) return null;
-            const frDate = fr instanceof Date ? fr : new Date(fr);
-            const ansDate = row[A_COL.ANSWERED - 1] instanceof Date ? row[A_COL.ANSWERED - 1] : new Date(row[A_COL.ANSWERED - 1]);
-            if (isNaN(frDate.getTime()) || isNaN(ansDate.getTime())) return null;
-            return Math.max(0, Math.round((frDate - ansDate) / 60000));
-          })()
+          isRead: isReadByUser(row[11], requestingEmail)
         });
       }
     }
@@ -1163,10 +835,7 @@ function getDataVersion() {
 // If clientVersion matches serverVersion, returns { unchanged: true } without fetching data.
 // Otherwise returns { unchanged: false, data: [...], version: '...' }
 function getQuestionsDataIfChanged(requestingEmail, clientVersion) {
-  // This is the app's hottest read path (initial load + every poll). doGet()
-  // already performs schema/setup migration, so repeating ensureSheetsExist()
-  // here only adds sheet writes/reads and can contend with other startup calls.
-  // Validate the selected roster profile once, then read data directly.
+  ensureSheetsExist();
   requireTeamMember(requestingEmail);
 
   const serverVersion = getDataVersion();
@@ -1176,9 +845,8 @@ function getQuestionsDataIfChanged(requestingEmail, clientVersion) {
     return { unchanged: true, version: serverVersion };
   }
 
-  // Version changed or first load - fetch and send full data WITHOUT repeating
-  // setup/auth a second time.
-  const records = readQuestionsDataCore(requestingEmail);
+  // Version changed or first load - fetch and send full data
+  const records = getQuestionsData(requestingEmail);
   return { unchanged: false, data: records, version: serverVersion };
 }
 
@@ -1318,10 +986,7 @@ function answerQuestion(ticketId, answerText, supervisorEmail, supervisorName) {
       "",                        // Read By - unread for everyone until each person opens it
       rowData[Q_COL.TICKET_ID - 1],
       cumulativeHold.toFixed(2),
-      rowData[Q_COL.ASKED_BY_EMAIL - 1] || "",
-      "",                        // First Read At
-      "",                        // First Read By
-      0                          // Read Toggle Count
+      rowData[Q_COL.ASKED_BY_EMAIL - 1] || ""
     ]);
 
     qSheet.deleteRow(rowIndex);
@@ -1542,39 +1207,19 @@ function unassignQuestion(ticketId, requestingEmail) {
 
 function toggleReadStatus(ticketId, isRead, requestingEmail) {
   return withLock(() => {
-    const member = requireTeamMember(requestingEmail);
+    requireTeamMember(requestingEmail);
     const email = normalizeEmail(requestingEmail);
     const target = requireAnsweredRow(ticketId);
-    const row = target.sheet.getRange(target.rowIndex, 1, 1, A_WIDTH).getValues()[0];
 
-    // Only the original asker can acknowledge/unacknowledge their answer.
-    // Support/Supervisor/Admin viewers are read-only for this state.
-    const ownerEmail = String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
-    const ownerName = stripNoraPrefix(String(row[A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
-    const memberName = stripNoraPrefix(String(member.name || '').trim()).toLowerCase();
-    const isOwner = ownerEmail ? ownerEmail === email : (ownerName && ownerName === memberName);
-    if (!isOwner) throw new Error('Only the original asker can change the Read/Unread acknowledgement.');
-
-    let list = parseReadByList(row[A_COL.READ_BY - 1]).filter(e => e !== '*');
-    const wasRead = list.indexOf(email) !== -1;
-    const wantsRead = !!isRead;
-    if (wasRead === wantsRead) return { success: true, changed: false };
-
-    if (wantsRead) list.push(email);
-    else list = list.filter(e => e !== email);
-    target.sheet.getRange(target.rowIndex, A_COL.READ_BY).setValue(list.join(', '));
-
-    // First-read timestamp is immutable once captured, even if the coordinator
-    // later puts the ticket back to Unread.
-    if (wantsRead && !row[A_COL.FIRST_READ_AT - 1]) {
-      target.sheet.getRange(target.rowIndex, A_COL.FIRST_READ_AT).setValue(new Date());
-      target.sheet.getRange(target.rowIndex, A_COL.FIRST_READ_BY).setValue(member.name);
+    const cell = target.sheet.getRange(target.rowIndex, A_COL.READ_BY);
+    let list = parseReadByList(cell.getValue()).filter(e => e !== '*');
+    if (isRead) {
+      if (list.indexOf(email) === -1) list.push(email);
+    } else {
+      list = list.filter(e => e !== email);
     }
-
-    const nextToggleCount = (Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0) + 1;
-    target.sheet.getRange(target.rowIndex, A_COL.READ_TOGGLE_COUNT).setValue(nextToggleCount);
-    logAudit(wantsRead ? 'ANSWER_READ' : 'ANSWER_UNREAD', member.email, member.name, ticketId, { toggleCount: nextToggleCount });
-    return { success: true, changed: true, toggleCount: nextToggleCount };
+    cell.setValue(list.join(', '));
+    return { success: true };
   });
 }
 
@@ -1589,41 +1234,28 @@ function markAllAnsweredRead(requestingEmail) {
     const lastRow = aSheet.getLastRow();
     if (lastRow < 2) return { success: true, updated: 0 };
 
+    // Single read of every answered row so we can derive eligibility + read lists
+    // without per-row API calls.
     const data = aSheet.getRange(2, 1, lastRow - 1, A_WIDTH).getValues();
-    const newReadVals = [];
-    const firstReadVals = [];
-    const firstReadByVals = [];
-    const toggleVals = [];
+    const requesterIsSupport = isSupportMember(member);
     let updated = 0;
-    const now = new Date();
+    const newReadVals = [];
 
     for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      const ownerEmail = String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
-      const ownerName = stripNoraPrefix(String(row[A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
-      const isOwn = ownerEmail ? ownerEmail === email : (ownerName && ownerName === stripNoraPrefix(String(member.name || '')).trim().toLowerCase());
-      let list = parseReadByList(row[A_COL.READ_BY - 1]).filter(e => e !== '*');
-      let firstRead = row[A_COL.FIRST_READ_AT - 1] || '';
-      let firstReadBy = row[A_COL.FIRST_READ_BY - 1] || '';
-      let toggles = Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0;
-
-      if (isOwn && list.indexOf(email) === -1) {
+      const rowAskerEmail = String(data[i][A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
+      const rowAskerName = stripNoraPrefix(String(data[i][A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
+      const isOwn = rowAskerEmail === email || (rowAskerName && rowAskerName === stripNoraPrefix(String(member.name)).trim().toLowerCase());
+      const eligible = requesterIsSupport ? true : isOwn;
+      let list = parseReadByList(data[i][A_COL.READ_BY - 1]).filter(e => e !== '*');
+      if (eligible && list.indexOf(email) === -1) {
         list.push(email);
         updated++;
-        toggles++;
-        if (!firstRead) { firstRead = now; firstReadBy = member.name; }
       }
       newReadVals.push([list.join(', ')]);
-      firstReadVals.push([firstRead]);
-      firstReadByVals.push([firstReadBy]);
-      toggleVals.push([toggles]);
     }
 
     if (updated > 0) {
       aSheet.getRange(2, A_COL.READ_BY, lastRow - 1, 1).setValues(newReadVals);
-      aSheet.getRange(2, A_COL.FIRST_READ_AT, lastRow - 1, 1).setValues(firstReadVals);
-      aSheet.getRange(2, A_COL.FIRST_READ_BY, lastRow - 1, 1).setValues(firstReadByVals);
-      aSheet.getRange(2, A_COL.READ_TOGGLE_COUNT, lastRow - 1, 1).setValues(toggleVals);
     }
     logAudit('MARK_ALL_READ', member.email, member.name, '', { updated: updated });
     return { success: true, updated: updated };
@@ -1642,15 +1274,11 @@ function saveTeamMember(member, requestingEmail) {
 
     const newEmail = normalizeEmail(member.email);
     const newName = String(member.name || '').trim();
-    const newTitle = String(member.title || '').trim();
-    const newCategory = String(member.category || '').trim();
-    const newStatus = String(member.status || '').trim().toLowerCase();
     if (!newName) throw new Error("Name is required.");
     if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) throw new Error("A valid email address is required.");
-    if (newStatus !== 'active' && newStatus !== 'inactive') throw new Error("Status must be active or inactive.");
-    validateTeamConfigSelection('ROLE', newTitle);
-    validateTeamConfigSelection('CATEGORY', newCategory);
 
+    // Rows are looked up by the email the record had BEFORE this edit, never
+    // by a client-cached row number.
     const originalEmail = normalizeEmail(member.originalEmail);
     const data = sheet.getDataRange().getValues();
     let targetRow = -1;
@@ -1661,22 +1289,27 @@ function saveTeamMember(member, requestingEmail) {
       if (targetRow === -1) throw new Error("This team member no longer exists - someone may have just removed them. Please refresh.");
     }
 
+    // Duplicate-email guard: no other roster row may already use the new email.
     for (let i = 1; i < data.length; i++) {
       const rowEmail = normalizeEmail(data[i][4]);
-      if (rowEmail === newEmail && (i + 1) !== targetRow) throw new Error("Another team member already uses that email address.");
+      if (rowEmail === newEmail && (i + 1) !== targetRow) {
+        throw new Error("Another team member already uses that email address.");
+      }
     }
 
-    const newAccessLevel = getMemberAccessLevel({ title: newTitle, category: newCategory });
-    let existingAccessLevel = ACCESS_COORDINATOR;
-    if (targetRow !== -1) {
-      const existingRow = sheet.getRange(targetRow, 1, 1, 7).getValues()[0];
-      existingAccessLevel = getMemberAccessLevel({ title: existingRow[1], category: existingRow[3] });
-    }
-    const touchesAdmin = newAccessLevel === ACCESS_ADMIN || existingAccessLevel === ACCESS_ADMIN;
+    const newCategory = String(member.category || '').trim();
+    const newStatus = String(member.status || '').trim();
+    const existingCategory = targetRow !== -1 ? String(sheet.getRange(targetRow, 4).getValue()).trim() : '';
+    const touchesAdmin = newCategory === 'Admin' || existingCategory === 'Admin';
 
     if (touchesAdmin) {
-      if (countWorkingAdmins() > 0) requireAdminRole(requestingEmail);
-      else requireSupportRole(requestingEmail);
+      // Bootstrap exception: if there is no working Admin yet, any
+      // Support/Supervisor may create the very first one.
+      if (countWorkingAdmins() > 0) {
+        requireAdminRole(requestingEmail);
+      } else {
+        requireSupportRole(requestingEmail);
+      }
     } else {
       requireSupportRole(requestingEmail);
     }
@@ -1688,35 +1321,40 @@ function saveTeamMember(member, requestingEmail) {
       const existing = sheet.getRange(targetRow, 1, 1, 7).getValues()[0];
       passwordHash = existing[5] || '';
       passwordSalt = existing[6] || '';
-      wasWorkingAdmin = existingAccessLevel === ACCESS_ADMIN
+      wasWorkingAdmin = String(existing[3]).trim() === 'Admin'
         && String(existing[2]).trim().toLowerCase() === 'active'
         && !!String(existing[5] || '').trim();
     }
 
-    const losesAdminAbility = wasWorkingAdmin && (newAccessLevel !== ACCESS_ADMIN || newStatus !== 'active');
+    // Last-working-Admin guard: an edit may not demote or deactivate the only
+    // Admin who can still log in - that would lock everyone out of Admin.
+    const losesAdminAbility = wasWorkingAdmin && (newCategory !== 'Admin' || newStatus.toLowerCase() !== 'active');
     if (losesAdminAbility && countWorkingAdmins() <= 1) {
       throw new Error("This is the last working Admin account - it cannot be demoted or deactivated. Create another Admin first.");
     }
 
-    if (newAccessLevel === ACCESS_ADMIN) {
+    if (newCategory === 'Admin') {
       if (member.password) {
         passwordSalt = Utilities.getUuid();
         passwordHash = hashPassword(member.password, passwordSalt);
       }
-      if (targetRow === -1 && !passwordHash) throw new Error("A password is required when creating a new Admin account.");
+      if (targetRow === -1 && !passwordHash) {
+        throw new Error("A password is required when creating a new Admin account.");
+      }
     } else {
       passwordHash = '';
       passwordSalt = '';
     }
 
     const actor = requireTeamMember(requestingEmail);
-    const row = [newName, newTitle, newStatus, newCategory, newEmail, passwordHash, passwordSalt];
-    if (targetRow !== -1) sheet.getRange(targetRow, 1, 1, 7).setValues([row]);
-    else sheet.appendRow(row);
+    const row = [newName, String(member.title || '').trim(), newStatus, newCategory, newEmail, passwordHash, passwordSalt];
 
-    logAudit(targetRow !== -1 ? 'TEAM_EDIT' : 'TEAM_ADD', actor.email, actor.name, '', {
-      member: newEmail, title: newTitle, category: newCategory, accessLevel: newAccessLevel, status: newStatus
-    });
+    if (targetRow !== -1) {
+      sheet.getRange(targetRow, 1, 1, 7).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
+    logAudit(targetRow !== -1 ? 'TEAM_EDIT' : 'TEAM_ADD', actor.email, actor.name, '', { member: newEmail, category: newCategory, status: newStatus });
     return { success: true };
   });
 }
@@ -1729,13 +1367,13 @@ function deleteTeamMember(email, requestingEmail) {
 
     const data = sheet.getDataRange().getValues();
     let targetRow = -1;
-    let targetAccessLevel = ACCESS_COORDINATOR;
+    let targetCategory = '';
     let targetIsWorkingAdmin = false;
     for (let i = 1; i < data.length; i++) {
       if (normalizeEmail(data[i][4]) === targetEmail) {
         targetRow = i + 1;
-        targetAccessLevel = getMemberAccessLevel({ title: data[i][1], category: data[i][3] });
-        targetIsWorkingAdmin = targetAccessLevel === ACCESS_ADMIN
+        targetCategory = String(data[i][3]).trim();
+        targetIsWorkingAdmin = targetCategory === 'Admin'
           && String(data[i][2]).trim().toLowerCase() === 'active'
           && !!String(data[i][5] || '').trim();
         break;
@@ -1743,20 +1381,24 @@ function deleteTeamMember(email, requestingEmail) {
     }
     if (targetRow === -1) throw new Error("This team member no longer exists - someone may have already removed them.");
 
-    if (targetAccessLevel === ACCESS_ADMIN) {
-      if (countWorkingAdmins() > 0) requireAdminRole(requestingEmail);
-      else requireSupportRole(requestingEmail);
+    if (targetCategory === 'Admin') {
+      if (countWorkingAdmins() > 0) {
+        requireAdminRole(requestingEmail);
+      } else {
+        requireSupportRole(requestingEmail); // bootstrap: cleanup of a broken Admin row
+      }
     } else {
       requireSupportRole(requestingEmail);
     }
 
+    // Last-working-Admin guard.
     if (targetIsWorkingAdmin && countWorkingAdmins() <= 1) {
       throw new Error("This is the last working Admin account - it cannot be deleted. Create another Admin first.");
     }
 
     const actor = requireTeamMember(requestingEmail);
     sheet.deleteRow(targetRow);
-    logAudit('TEAM_DELETE', actor.email, actor.name, '', { member: targetEmail, accessLevel: targetAccessLevel });
+    logAudit('TEAM_DELETE', actor.email, actor.name, '', { member: targetEmail });
     return { success: true };
   });
 }
