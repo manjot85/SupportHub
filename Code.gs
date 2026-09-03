@@ -78,9 +78,10 @@ const Q_WIDTH = 18;
 const A_COL = {
   QUESTION: 1, EVENT: 2, ASKED_BY: 3, CREATED: 4, ANSWERED: 5, PRIORITY: 6,
   TURNAROUND: 7, LINK: 8, ANSWER: 9, STATUS: 10, ANSWERED_BY: 11, READ_BY: 12,
-  TICKET_ID: 13, HOLD_HOURS: 14, ASKED_BY_EMAIL: 15
+  TICKET_ID: 13, HOLD_HOURS: 14, ASKED_BY_EMAIL: 15,
+  FIRST_READ_AT: 16, FIRST_READ_BY: 17, READ_TOGGLE_COUNT: 18
 };
-const A_WIDTH = 15;
+const A_WIDTH = 18;
 
 // Canonical status values — never write anything else into the Status columns.
 const STATUS_OPEN = "Open";
@@ -505,6 +506,26 @@ function ensureAnsweredSchema(sheet) {
       const vals = range.getValues().map(r => [r[0] || ""]);
       range.setValues(vals);
     }
+  }
+
+  // Coordinator acknowledgement tracking. These columns are appended only;
+  // existing Answered data and column positions remain untouched.
+  lastCol = Math.max(sheet.getLastColumn(), 1);
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const readHeaders = [
+    ['First Read At', A_COL.FIRST_READ_AT],
+    ['First Read By', A_COL.FIRST_READ_BY],
+    ['Read Toggle Count', A_COL.READ_TOGGLE_COUNT]
+  ];
+  readHeaders.forEach(item => {
+    const label = item[0], col = item[1];
+    if (headers[col - 1] !== label) sheet.getRange(1, col).setValue(label);
+  });
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const toggleRange = sheet.getRange(2, A_COL.READ_TOGGLE_COUNT, lastRow - 1, 1);
+    const vals = toggleRange.getValues().map(r => [r[0] === '' || r[0] == null || isNaN(r[0]) ? 0 : Number(r[0])]);
+    toggleRange.setValues(vals);
   }
 }
 
@@ -1083,7 +1104,21 @@ function readQuestionsDataCore(requestingEmail) {
           answeredBy: stripNoraPrefix(String(row[10] || "Supervisor").trim()),
           priority: String(row[5] || "Resolved").trim(),
           hoursElapsed: 0,
-          isRead: isReadByUser(row[11], requestingEmail)
+          // Read state is the ORIGINAL ASKER'S acknowledgement state, not the
+          // viewer's personal read state. This makes Support/Supervisor views
+          // reflect whether the coordinator has actually seen the answer.
+          isRead: isReadByUser(row[A_COL.READ_BY - 1], String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase()),
+          firstReadAt: row[A_COL.FIRST_READ_AT - 1] ? safeIsoDate(row[A_COL.FIRST_READ_AT - 1]) : "",
+          firstReadBy: stripNoraPrefix(String(row[A_COL.FIRST_READ_BY - 1] || '').trim()),
+          readToggleCount: Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0,
+          firstReadMinutes: (function() {
+            const fr = row[A_COL.FIRST_READ_AT - 1];
+            if (!fr) return null;
+            const frDate = fr instanceof Date ? fr : new Date(fr);
+            const ansDate = row[A_COL.ANSWERED - 1] instanceof Date ? row[A_COL.ANSWERED - 1] : new Date(row[A_COL.ANSWERED - 1]);
+            if (isNaN(frDate.getTime()) || isNaN(ansDate.getTime())) return null;
+            return Math.max(0, Math.round((frDate - ansDate) / 60000));
+          })()
         });
       }
     }
@@ -1283,7 +1318,10 @@ function answerQuestion(ticketId, answerText, supervisorEmail, supervisorName) {
       "",                        // Read By - unread for everyone until each person opens it
       rowData[Q_COL.TICKET_ID - 1],
       cumulativeHold.toFixed(2),
-      rowData[Q_COL.ASKED_BY_EMAIL - 1] || ""
+      rowData[Q_COL.ASKED_BY_EMAIL - 1] || "",
+      "",                        // First Read At
+      "",                        // First Read By
+      0                          // Read Toggle Count
     ]);
 
     qSheet.deleteRow(rowIndex);
@@ -1504,19 +1542,39 @@ function unassignQuestion(ticketId, requestingEmail) {
 
 function toggleReadStatus(ticketId, isRead, requestingEmail) {
   return withLock(() => {
-    requireTeamMember(requestingEmail);
+    const member = requireTeamMember(requestingEmail);
     const email = normalizeEmail(requestingEmail);
     const target = requireAnsweredRow(ticketId);
+    const row = target.sheet.getRange(target.rowIndex, 1, 1, A_WIDTH).getValues()[0];
 
-    const cell = target.sheet.getRange(target.rowIndex, A_COL.READ_BY);
-    let list = parseReadByList(cell.getValue()).filter(e => e !== '*');
-    if (isRead) {
-      if (list.indexOf(email) === -1) list.push(email);
-    } else {
-      list = list.filter(e => e !== email);
+    // Only the original asker can acknowledge/unacknowledge their answer.
+    // Support/Supervisor/Admin viewers are read-only for this state.
+    const ownerEmail = String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
+    const ownerName = stripNoraPrefix(String(row[A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
+    const memberName = stripNoraPrefix(String(member.name || '').trim()).toLowerCase();
+    const isOwner = ownerEmail ? ownerEmail === email : (ownerName && ownerName === memberName);
+    if (!isOwner) throw new Error('Only the original asker can change the Read/Unread acknowledgement.');
+
+    let list = parseReadByList(row[A_COL.READ_BY - 1]).filter(e => e !== '*');
+    const wasRead = list.indexOf(email) !== -1;
+    const wantsRead = !!isRead;
+    if (wasRead === wantsRead) return { success: true, changed: false };
+
+    if (wantsRead) list.push(email);
+    else list = list.filter(e => e !== email);
+    target.sheet.getRange(target.rowIndex, A_COL.READ_BY).setValue(list.join(', '));
+
+    // First-read timestamp is immutable once captured, even if the coordinator
+    // later puts the ticket back to Unread.
+    if (wantsRead && !row[A_COL.FIRST_READ_AT - 1]) {
+      target.sheet.getRange(target.rowIndex, A_COL.FIRST_READ_AT).setValue(new Date());
+      target.sheet.getRange(target.rowIndex, A_COL.FIRST_READ_BY).setValue(member.name);
     }
-    cell.setValue(list.join(', '));
-    return { success: true };
+
+    const nextToggleCount = (Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0) + 1;
+    target.sheet.getRange(target.rowIndex, A_COL.READ_TOGGLE_COUNT).setValue(nextToggleCount);
+    logAudit(wantsRead ? 'ANSWER_READ' : 'ANSWER_UNREAD', member.email, member.name, ticketId, { toggleCount: nextToggleCount });
+    return { success: true, changed: true, toggleCount: nextToggleCount };
   });
 }
 
@@ -1531,28 +1589,41 @@ function markAllAnsweredRead(requestingEmail) {
     const lastRow = aSheet.getLastRow();
     if (lastRow < 2) return { success: true, updated: 0 };
 
-    // Single read of every answered row so we can derive eligibility + read lists
-    // without per-row API calls.
     const data = aSheet.getRange(2, 1, lastRow - 1, A_WIDTH).getValues();
-    const requesterIsSupport = isSupportMember(member);
-    let updated = 0;
     const newReadVals = [];
+    const firstReadVals = [];
+    const firstReadByVals = [];
+    const toggleVals = [];
+    let updated = 0;
+    const now = new Date();
 
     for (let i = 0; i < data.length; i++) {
-      const rowAskerEmail = String(data[i][A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
-      const rowAskerName = stripNoraPrefix(String(data[i][A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
-      const isOwn = rowAskerEmail === email || (rowAskerName && rowAskerName === stripNoraPrefix(String(member.name)).trim().toLowerCase());
-      const eligible = requesterIsSupport ? true : isOwn;
-      let list = parseReadByList(data[i][A_COL.READ_BY - 1]).filter(e => e !== '*');
-      if (eligible && list.indexOf(email) === -1) {
+      const row = data[i];
+      const ownerEmail = String(row[A_COL.ASKED_BY_EMAIL - 1] || '').trim().toLowerCase();
+      const ownerName = stripNoraPrefix(String(row[A_COL.ASKED_BY - 1] || '').trim()).toLowerCase();
+      const isOwn = ownerEmail ? ownerEmail === email : (ownerName && ownerName === stripNoraPrefix(String(member.name || '')).trim().toLowerCase());
+      let list = parseReadByList(row[A_COL.READ_BY - 1]).filter(e => e !== '*');
+      let firstRead = row[A_COL.FIRST_READ_AT - 1] || '';
+      let firstReadBy = row[A_COL.FIRST_READ_BY - 1] || '';
+      let toggles = Number(row[A_COL.READ_TOGGLE_COUNT - 1]) || 0;
+
+      if (isOwn && list.indexOf(email) === -1) {
         list.push(email);
         updated++;
+        toggles++;
+        if (!firstRead) { firstRead = now; firstReadBy = member.name; }
       }
       newReadVals.push([list.join(', ')]);
+      firstReadVals.push([firstRead]);
+      firstReadByVals.push([firstReadBy]);
+      toggleVals.push([toggles]);
     }
 
     if (updated > 0) {
       aSheet.getRange(2, A_COL.READ_BY, lastRow - 1, 1).setValues(newReadVals);
+      aSheet.getRange(2, A_COL.FIRST_READ_AT, lastRow - 1, 1).setValues(firstReadVals);
+      aSheet.getRange(2, A_COL.FIRST_READ_BY, lastRow - 1, 1).setValues(firstReadByVals);
+      aSheet.getRange(2, A_COL.READ_TOGGLE_COUNT, lastRow - 1, 1).setValues(toggleVals);
     }
     logAudit('MARK_ALL_READ', member.email, member.name, '', { updated: updated });
     return { success: true, updated: updated };

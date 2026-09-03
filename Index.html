@@ -227,7 +227,7 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <option value="READ">Read Only</option>
 </select>
 <input type="date" id="answered-date-filter" onchange="renderAnsweredTab()" class="border border-slate-300 px-2 py-1.5 rounded-lg text-xs outline-none">
-<button onclick="markAllAnsweredAsRead()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition">Mark All Read</button>
+<button id="answered-mark-all-btn" onclick="markAllAnsweredAsRead()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition">Mark All Read</button>
 </div>
 </div>
 
@@ -381,6 +381,9 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 <select id="sup-filter-askedby" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
 <option value="">Asked by: anyone</option>
 </select>
+<select id="sup-filter-askedby-role" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
+<option value="">Asked by Role: anyone</option>
+</select>
 <select id="sup-filter-assignee" onchange="renderSupervisorDesk()" class="w-full border border-slate-200 px-2 py-1.5 rounded-lg text-xs outline-none text-slate-600">
 <option value="">Assigned to: anyone</option>
 </select>
@@ -495,6 +498,24 @@ Mark as Urgent Escalation (Forces Top Priority P1)
 </thead>
 <tbody id="report-breakdown-body" class="divide-y divide-slate-100"></tbody>
 </table>
+</div>
+
+<div class="border-t border-slate-200 pt-6 mt-6 mb-6">
+<h3 class="text-sm font-bold text-slate-800 mb-1">Coordinator Answer Read Tracking</h3>
+<p class="text-xs text-slate-500 mb-3">Tracks the original asker's current Read/Unread acknowledgement, first-read speed, and Read/Unread toggle count.</p>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+<div class="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Read</p><p id="stat-coord-read" class="text-2xl font-bold text-slate-900 mt-1">0</p></div>
+<div class="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Unread</p><p id="stat-coord-unread" class="text-2xl font-bold text-slate-900 mt-1">0</p></div>
+<div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Avg First Read</p><p id="stat-coord-read-speed" class="text-2xl font-bold text-slate-900 mt-1">—</p></div>
+</div>
+<div class="overflow-x-auto border rounded-xl border-slate-200">
+<table class="table-fixed-layout text-left text-xs">
+<thead><tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+<th class="p-3 w-40">COORDINATOR</th><th class="p-3">EVENT</th><th class="p-3 w-24 text-center">STATE</th><th class="p-3 w-36 text-center">FIRST READ</th><th class="p-3 w-28 text-center">READ SPEED</th><th class="p-3 w-20 text-center">TOGGLES</th>
+</tr></thead>
+<tbody id="report-read-tracking-body" class="divide-y divide-slate-100"></tbody>
+</table>
+</div>
 </div>
 
 <h3 id="report-detail-title" class="text-sm font-bold text-slate-800 mb-2">Unanswered Questions Queue</h3>
@@ -1546,6 +1567,9 @@ function finishLogin(member) {
   // way to broaden the view from the UI.
   const scopeFilter = document.getElementById('answered-scope-filter');
   const subtitle = document.getElementById('answered-subtitle');
+  const markAllReadBtn = document.getElementById('answered-mark-all-btn');
+  if (markAllReadBtn) markAllReadBtn.classList.toggle('hidden', support);
+
   if (!support) {
     if (scopeFilter) {
       scopeFilter.value = 'MINE';
@@ -1616,8 +1640,14 @@ function switchTab(name) {
       tab.classList.toggle('text-slate-400', t !== name);
     }
   });
-  if (name === 'team' && isSupportUser(currentUser) && !teamConfigLoaded) {
-    loadTeamConfiguration(() => renderCurrentTab());
+  // Roles/Categories stay out of login/bootstrap. Load them only when a
+  // Support user opens a view that actually needs the complete configured
+  // role list (Supervisor Desk role filter or Team Setup CRUD).
+  if ((name === 'team' || name === 'supervisor') && isSupportUser(currentUser) && !teamConfigLoaded) {
+    loadTeamConfiguration(() => {
+      populateFilterDropdowns();
+      renderCurrentTab();
+    });
     return;
   }
   renderCurrentTab();
@@ -2021,19 +2051,22 @@ function renderAnsweredTab() {
       '<td class="p-3"><div class="text-slate-900 truncate font-semibold">' + q.question + '</div><div class="text-emerald-700 text-[11px] truncate font-medium">' + q.answer + '</div></td>' +
       '<td class="p-3 text-slate-700 font-medium truncate">' + esc(getUserDisplayName(q.answeredBy)) + '</td>' +
       '<td class="p-3 text-center font-mono text-[11px] text-slate-500">' + esc(q.turnaroundHours) + ' hrs</td>' +
-      '<td class="p-3 text-right"><button onclick="toggleRead(\'' + esc(q.ticketId) + '\', ' + (!q.isRead) + ')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">' + (q.isRead ? 'Unread' : 'Read') + '</button></td>';
+      '<td class="p-3 text-right">' + (userIsSupport
+        ? '<span class="text-[10px] text-slate-400 font-medium">View only</span>'
+        : '<button onclick="toggleRead(\'' + esc(q.ticketId) + '\', ' + (!q.isRead) + ')" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline">' + (q.isRead ? 'Unread' : 'Read') + '</button>') + '</td>';
     body.appendChild(tr);
   });
 }
 
 function markAllAnsweredAsRead() {
   const userIsSupport = isSupportUser(currentUser);
+  if (userIsSupport) { showToast('Read/Unread acknowledgement is controlled by the original asker.'); return; }
   // Coordinators only mark the tickets they are allowed to see (their own).
   const affected = allQuestions.filter(q =>
     q.sheet === 'Answered' &&
     !q.isRead &&
     !(isAskedBySupport(q) && !userIsSupport) &&
-    (userIsSupport || isOwnerOf(q))
+    isOwnerOf(q)
   );
   if (affected.length === 0) {
     showToast('All answered tickets are already marked as read.');
@@ -2073,9 +2106,11 @@ function openViewModal(q) {
   reopenBtn.classList.toggle('hidden', !canReopen);
 
   updateModalReadUI(q.isRead);
+  const readToggleBtn = document.getElementById('vmodal-toggle-btn');
+  if (readToggleBtn) readToggleBtn.classList.toggle('hidden', isSupportUser(currentUser));
   document.getElementById('view-modal').classList.remove('hidden');
 
-  if (!q.isRead) { activeViewQuestion.isRead = true; updateModalReadUI(true); toggleRead(q.ticketId, true); }
+  if (!q.isRead && !isSupportUser(currentUser) && isOwnerOf(q)) { activeViewQuestion.isRead = true; updateModalReadUI(true); toggleRead(q.ticketId, true); }
 }
 
 async function reopenTicket() {
@@ -2110,7 +2145,7 @@ function updateModalReadUI(isRead) {
 }
 
 function toggleReadModal() {
-  if (!activeViewQuestion) return;
+  if (!activeViewQuestion || isSupportUser(currentUser) || !isOwnerOf(activeViewQuestion)) return;
   const newStatus = !activeViewQuestion.isRead;
   activeViewQuestion.isRead = newStatus;
   updateModalReadUI(newStatus);
@@ -2526,6 +2561,7 @@ function toggleSupWorkloadMember(email, visible) {
 function populateFilterDropdowns() {
   // Supervisor filters
   const askedSel = document.getElementById('sup-filter-askedby');
+  const askedRoleSel = document.getElementById('sup-filter-askedby-role');
   const assigneeSel = document.getElementById('sup-filter-assignee');
   const bulkSel = document.getElementById('sup-bulk-assignee');
 
@@ -2538,6 +2574,26 @@ function populateFilterDropdowns() {
     teamMembers.filter(m => String(m.status).toLowerCase() === 'active').forEach(m => {
       askedSel.innerHTML += '<option value="' + esc(m.email) + '">' + esc(m.name) + '</option>';
     });
+  }
+
+  // Asked-by Role should list ALL configured roles, including roles that do
+  // not currently have a roster member assigned (for example Project Manager).
+  // Team Configuration is lazy-loaded when Supervisor Desk is opened so this
+  // does not add work to the login/bootstrap path. Roster titles remain as a
+  // fallback for legacy deployments or a temporarily unavailable config sheet.
+  if (askedRoleSel) {
+    const currentRole = askedRoleSel.value;
+    const configuredRoles = teamConfigLoaded
+      ? (teamConfig.roles || []).map(r => String(r.name || '').trim()).filter(Boolean)
+      : [];
+    const rosterRoles = teamMembers.map(m => String(m.title || '').trim()).filter(Boolean);
+    const roles = Array.from(new Set(configuredRoles.concat(rosterRoles)))
+      .sort((a, b) => a.localeCompare(b));
+    askedRoleSel.innerHTML = '<option value="">Asked by Role: anyone</option>';
+    roles.forEach(role => {
+      askedRoleSel.innerHTML += '<option value="' + esc(role) + '">' + esc(role) + '</option>';
+    });
+    if (roles.includes(currentRole)) askedRoleSel.value = currentRole;
   }
 
   if (assigneeSel && bulkSel) {
@@ -2633,6 +2689,7 @@ function clearSupFilters() {
   document.getElementById('sup-search').value = '';
   document.getElementById('sup-filter-priority').value = 'ALL';
   document.getElementById('sup-filter-askedby').value = '';
+  document.getElementById('sup-filter-askedby-role').value = '';
   document.getElementById('sup-filter-assignee').value = '';
   document.getElementById('sup-filter-date').value = '';
   refreshSupQuickFilterStyles();
@@ -2714,6 +2771,7 @@ function renderSupervisorDesk() {
   const search = (document.getElementById('sup-search').value || '').toLowerCase();
   const fPriority = document.getElementById('sup-filter-priority').value;
   const fAsked = document.getElementById('sup-filter-askedby').value;
+  const fAskedRole = document.getElementById('sup-filter-askedby-role').value;
   const fAssignee = document.getElementById('sup-filter-assignee').value;
   const fDate = document.getElementById('sup-filter-date').value;
 
@@ -2725,6 +2783,10 @@ function renderSupervisorDesk() {
     if (fPriority !== 'ALL' && normalizePriority(q.priority) !== fPriority) return false;
     if (search && !(q.question.toLowerCase().includes(search) || q.eventName.toLowerCase().includes(search) || getUserDisplayName(q.askedBy).toLowerCase().includes(search))) return false;
     if (fAsked && (q.askedByEmail || '') !== fAsked) return false;
+    if (fAskedRole) {
+      const askerMember = findAskerTeamMember(q);
+      if (!askerMember || String(askerMember.title || '').trim() !== fAskedRole) return false;
+    }
     if (fAssignee === '__none__' && q.assignedTo) return false;
     if (fAssignee && fAssignee !== '__none__' && q.assignedTo !== fAssignee) return false;
     if (fDate && cstDateString(q.created) !== fDate) return false;
@@ -3208,7 +3270,52 @@ function renderReporting() {
   if (statU) statU.innerText = unanswered.length;
   if (statA) statA.innerText = answered.length;
   renderReportBreakdown(answered);
+  renderCoordinatorReadTracking(answered);
   filterReport(currentReportType);
+}
+
+function formatReadSpeed(minutes) {
+  if (minutes === null || minutes === undefined || isNaN(minutes)) return '—';
+  const mins = Math.max(0, Math.round(Number(minutes)));
+  if (mins < 60) return mins + ' min';
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? hrs + 'h ' + rem + 'm' : hrs + 'h';
+}
+
+function renderCoordinatorReadTracking(answeredRecords) {
+  const body = document.getElementById('report-read-tracking-body');
+  if (!body) return;
+  const records = (answeredRecords || []).filter(q => !isAskedBySupport(q));
+  const readCount = records.filter(q => q.isRead).length;
+  const unreadCount = records.length - readCount;
+  const readSpeeds = records.map(q => q.firstReadMinutes).filter(v => v !== null && v !== undefined && !isNaN(v));
+  const avg = readSpeeds.length ? Math.round(readSpeeds.reduce((a,b) => a + Number(b), 0) / readSpeeds.length) : null;
+  const readEl = document.getElementById('stat-coord-read');
+  const unreadEl = document.getElementById('stat-coord-unread');
+  const speedEl = document.getElementById('stat-coord-read-speed');
+  if (readEl) readEl.innerText = readCount;
+  if (unreadEl) unreadEl.innerText = unreadCount;
+  if (speedEl) speedEl.innerText = formatReadSpeed(avg);
+  body.innerHTML = '';
+  if (!records.length) {
+    body.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No coordinator answered tickets in this range.</td></tr>';
+    return;
+  }
+  records.slice().sort((a,b) => new Date(b.answeredDate || 0) - new Date(a.answeredDate || 0)).forEach(q => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 cursor-pointer';
+    tr.onclick = () => openTicketDetail(q.sheet, q.ticketId);
+    const stateClass = q.isRead ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-amber-50 text-amber-700 border border-amber-200/60';
+    tr.innerHTML =
+      '<td class="p-3 font-semibold text-slate-800 truncate">' + esc(getUserDisplayName(q.askedBy)) + '</td>' +
+      '<td class="p-3 text-slate-700 truncate">' + esc(q.eventName || '—') + '</td>' +
+      '<td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-semibold ' + stateClass + '">' + (q.isRead ? 'READ' : 'UNREAD') + '</span></td>' +
+      '<td class="p-3 text-center text-[11px] text-slate-600">' + (q.firstReadAt ? formatCSTDateTime(q.firstReadAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—') + '</td>' +
+      '<td class="p-3 text-center font-mono text-[11px] text-slate-600">' + formatReadSpeed(q.firstReadMinutes) + '</td>' +
+      '<td class="p-3 text-center font-mono text-[11px] text-slate-600">' + (q.readToggleCount || 0) + '</td>';
+    body.appendChild(tr);
+  });
 }
 
 function sortReportBreakdown(col) {
@@ -3344,6 +3451,7 @@ function filterReport(type) {
 function loadTeamConfiguration(callback) {
   if (teamConfigLoaded) {
     populateTeamSetupDropdowns();
+    populateFilterDropdowns();
     renderTeamConfig();
     if (callback) callback(true);
     return;
@@ -3367,6 +3475,7 @@ function loadTeamConfiguration(callback) {
     teamConfig.roles = teamConfig.roles || [];
     teamConfig.categories = teamConfig.categories || [];
     populateTeamSetupDropdowns();
+    populateFilterDropdowns();
     renderTeamConfig();
     if (callback) callback(true);
   }).getTeamConfiguration();
